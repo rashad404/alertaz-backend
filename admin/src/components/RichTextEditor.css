@@ -1,0 +1,259 @@
+/* TipTap Editor Styles */
+.ProseMirror {
+  min-height: 300px;
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.ProseMirror:focus {
+  outline: none;
+}
+
+.ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: #adb5bd;
+  pointer-events: none;
+  height: 0;
+}
+
+/* Typography */
+.ProseMirror h1 {
+  font-size: 2em;
+  font-weight: bold;
+  margin: 1em 0 0.5em;
+}
+
+.ProseMirror h2 {
+  font-size: 1.5em;
+  font-weight: bold;
+  margin: 1em 0 0.5em;
+}
+
+.ProseMirror h3 {
+  font-size: 1.25em;
+  font-weight: bold;
+  margin: 1em 0 0.5em;
+}
+
+.ProseMirror p {
+  margin: 0.75em 0;
+}
+
+.ProseMirror strong {
+  font-weight: bold;
+}
+
+.ProseMirror em {
+  font-style: italic;
+}
+
+.ProseMirror code {
+  background-color: #f3f4f6;
+  border-radius: 0.25rem;
+  padding: 0.125rem 0.25rem;
+  font-family: monospace;
+}
+
+.ProseMirror pre {
+  background-color: #f3f4f6;
+  border-radius: 0.375rem;
+  padding: 1rem;
+  font-family: monospace;
+  overflow-x: auto;
+  margin: 1em 0;
+}
+
+/* Lists */
+.ProseMirror ul {
+  list-style-type: disc;
+  padding-left: 1.5em;
+  margin: 0.75em 0;
+}
+
+.ProseMirror ol {
+  list-style-type: decimal;
+  padding-left: 1.5em;
+  margin: 0.75em 0;
+}
+
+.ProseMirror li {
+  margin: 0.25em 0;
+}
+
+/* Blockquote */
+.ProseMirror blockquote {
+  border-left: 3px solid #e5e7eb;
+  padding-left: 1em;
+  margin: 1em 0;
+  font-style: italic;
+  color: #6b7280;
+}
+
+/* Links */
+.ProseMirror a {
+  color: #2563eb;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.ProseMirror a:hover {
+  color: #1d4ed8;
+}
+
+/* Images */
+.ProseMirror img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.5rem;
+  margin: 1rem 0;
+  display: block;
+}
+
+.ProseMirror .image-resizer-container {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  margin: 1rem 0;
+}
+
+.ProseMirror .image-resizer-container img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.5rem;
+  margin: 0;
+}
+
+.ProseMirror .image-resizer-container:hover .image-resize-handle {
+  display: block !important;
+}
+
+.ProseMirror .image-resize-handle {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 20px;
+  height: 20px;
+  background: #3b82f6;
+  cursor: nwse-resize;
+  border-radius: 0 0 0.5rem 0;
+  display: none;
+  z-index: 10;
+}
+
+.ProseMirror .image-resize-handle:hover {
+  background: #2563eb;
+}
+
+/* YouTube */
+.ProseMirror iframe {
+  max-width: 100%;
+  border-radius: 0.5rem;
+  margin: 1rem 0;
+}
+
+/* Horizontal Rule */
+.ProseMirror hr {
+  border: none;
+  border-top: 2px solid #e5e7eb;
+  margin: 2em 0;
+}
+
+/* Tables */
+.ProseMirror table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  margin: 1rem 0;
+  overflow: hidden;
+}
+
+.ProseMirror td,
+.ProseMirror th {
+  min-width: 1em;
+  border: 1px solid #e5e7eb;
+  padding: 8px 12px;
+  vertical-align: top;
+  box-sizing: border-box;
+  position: relative;
+}
+
+.ProseMirror th {
+  font-weight: bold;
+  text-align: left;
+  background-color: #f9fafb;
+}
+
+.ProseMirror .selectedCell:after {
+  z-index: 2;
+  position: absolute;
+  content: "";
+  left: 0; right: 0; top: 0; bottom: 0;
+  background: rgba(59, 130, 246, 0.1);
+  pointer-events: none;
+}
+
+.ProseMirror .column-resize-handle {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  z-index: 20;
+  background-color: #cbd5e1;
+  pointer-events: none;
+}
+
+.ProseMirror .tableWrapper {
+  overflow-x: auto;
+  margin: 1rem 0;
+}
+
+/* Custom font sizes */
+.ProseMirror [style*="font-size"] {
+  line-height: 1.5;
+}
+
+/* Text alignment */
+.ProseMirror [style*="text-align: left"],
+.ProseMirror .text-left {
+  text-align: left;
+}
+
+.ProseMirror [style*="text-align: center"],
+.ProseMirror .text-center {
+  text-align: center;
+}
+
+.ProseMirror [style*="text-align: right"],
+.ProseMirror .text-right {
+  text-align: right;
+}
+
+.ProseMirror [style*="text-align: justify"],
+.ProseMirror .text-justify {
+  text-align: justify;
+}
+
+/* Ensure images respect alignment */
+.ProseMirror img[style*="text-align: center"],
+.ProseMirror .image-resizer-container[style*="text-align: center"] {
+  margin-left: auto !important;
+  margin-right: auto !important;
+  display: block !important;
+}
+
+.ProseMirror img[style*="text-align: right"],
+.ProseMirror .image-resizer-container[style*="text-align: right"] {
+  margin-left: auto !important;
+  margin-right: 0 !important;
+  display: block !important;
+}
+
+.ProseMirror img[style*="text-align: left"],
+.ProseMirror .image-resizer-container[style*="text-align: left"] {
+  margin-left: 0 !important;
+  margin-right: auto !important;
+  display: block !important;
+}

@@ -1,0 +1,34 @@
+*.log
+.DS_Store
+.env
+.env.backup
+.env.production
+.phpactor.json
+.phpunit.result.cache
+/.fleet
+/.idea
+/.phpunit.cache
+/.vscode
+/.zed
+/auth.json
+/node_modules
+/public/build
+/public/hot
+/public/storage
+/public/uploads
+/public/vendor
+/storage/*.key
+/storage/pail
+/vendor
+Homestead.json
+Homestead.yaml
+Thumbs.db
+
+# Admin panel build artifacts
+/admin/tsconfig.app.tsbuildinfo
+/admin/tsconfig.node.tsbuildinfo
+/admin/dist
+/public/admin
+
+# Error logs
+error_log

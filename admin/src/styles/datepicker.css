@@ -1,0 +1,62 @@
+/* Custom styles for react-datepicker to match admin panel */
+.react-datepicker-wrapper {
+  width: 100%;
+}
+
+.react-datepicker__input-container input {
+  width: 100%;
+}
+
+/* Override datepicker styles to match Tailwind theme */
+.admin-datepicker {
+  font-family: inherit;
+  border: 1px solid #d1d5db;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+}
+
+.react-datepicker__header {
+  background-color: #3b82f6;
+  border-bottom: none;
+}
+
+.react-datepicker__current-month,
+.react-datepicker__day-name {
+  color: white;
+}
+
+.react-datepicker__day--selected,
+.react-datepicker__day--keyboard-selected {
+  background-color: #3b82f6;
+}
+
+.react-datepicker__day:hover {
+  background-color: #dbeafe;
+}
+
+.react-datepicker__time-container .react-datepicker__time {
+  background-color: white;
+}
+
+.react-datepicker__time-container .react-datepicker__time .react-datepicker__time-box ul.react-datepicker__time-list li.react-datepicker__time-list-item--selected {
+  background-color: #3b82f6;
+}
+
+.react-datepicker__time-container .react-datepicker__time .react-datepicker__time-box ul.react-datepicker__time-list li.react-datepicker__time-list-item:hover {
+  background-color: #dbeafe;
+}
+
+/* Ensure 24-hour format display */
+.react-datepicker__time-caption {
+  font-weight: 600;
+  color: #374151;
+}
+
+/* Month and year dropdowns */
+.react-datepicker__month-select,
+.react-datepicker__year-select {
+  padding: 2px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  background-color: white;
+  margin: 0 4px;
+}

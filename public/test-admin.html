@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Test Admin Login</title>
+</head>
+<body>
+    <h1>Test Admin Login</h1>
+    <div id="result"></div>
+    
+    <script>
+        async function testLogin() {
+            const resultDiv = document.getElementById('result');
+            
+            try {
+                const response = await fetch('http://localhost:8000/api/admin/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        email: 'admin@example.com',
+                        password: 'password'
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    resultDiv.innerHTML = `
+                        <h2 style="color: green;">Login Successful!</h2>
+                        <p>Token: ${data.token}</p>
+                        <p>User: ${data.user.name} (${data.user.email})</p>
+                        <p>Admin: ${data.user.is_admin ? 'Yes' : 'No'}</p>
+                        <br>
+                        <p>Now you can access the admin panel at <a href="/admin">http://localhost:8000/admin</a></p>
+                        <p>The token has been saved to localStorage as 'admin_token'</p>
+                    `;
+                    localStorage.setItem('admin_token', data.token);
+                } else {
+                    resultDiv.innerHTML = `<h2 style="color: red;">Login Failed: ${JSON.stringify(data)}</h2>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<h2 style="color: red;">Error: ${error.message}</h2>`;
+            }
+        }
+        
+        // Auto-run the test
+        testLogin();
+    </script>
+</body>
+</html>
