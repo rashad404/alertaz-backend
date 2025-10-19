@@ -16,6 +16,13 @@ Route::prefix('auth')->group(function () {
     Route::post('/otp/send', [AuthController::class, 'sendOTP']);
     Route::post('/otp/verify', [AuthController::class, 'verifyOTP']);
 
+    // Email Verification
+    Route::post('/email/send', [AuthController::class, 'sendEmailVerification']);
+    Route::post('/email/verify', [AuthController::class, 'verifyEmailCode']);
+
+    // Resend Verification Code (for both SMS and Email)
+    Route::post('/resend-code', [AuthController::class, 'resendCode']);
+
     // Social OAuth
     Route::get('/{provider}', [AuthController::class, 'redirectToProvider'])
         ->where('provider', 'google|facebook');

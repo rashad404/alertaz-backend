@@ -10,15 +10,15 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
 use Laravel\Socialite\Facades\Socialite;
 use Illuminate\Support\Str;
-use App\Services\OTPService;
+use App\Services\VerificationService;
 
 class AuthController extends Controller
 {
-    protected $otpService;
+    protected $verificationService;
 
-    public function __construct(OTPService $otpService)
+    public function __construct(VerificationService $verificationService)
     {
-        $this->otpService = $otpService;
+        $this->verificationService = $verificationService;
     }
 
     /**
@@ -109,7 +109,7 @@ class AuthController extends Controller
     public function sendOTP(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'phone' => 'required|string|regex:/^\+994[0-9]{9}$/',
+            'phone' => 'required|string|regex:/^(\+994)?[0-9]{9,12}$/',
             'purpose' => 'in:login,verify'
         ]);
 
@@ -122,18 +122,25 @@ class AuthController extends Controller
         }
 
         $phone = $request->phone;
-        $purpose = $request->purpose ?? 'login';
+        // Normalize phone number
+        if (!str_starts_with($phone, '+')) {
+            $phone = '+994' . ltrim($phone, '0');
+        }
 
-        // Generate and send OTP
-        $result = $this->otpService->sendOTP($phone, $purpose);
+        // Check if user exists
+        $user = User::where('phone', $phone)->first();
+
+        // Send OTP using verification service
+        $result = $this->verificationService->sendSMSVerification($phone, $user);
 
         if ($result['success']) {
             return response()->json([
                 'status' => 'success',
-                'message' => 'OTP sent successfully',
+                'message' => $result['message'],
                 'data' => [
                     'phone' => $phone,
-                    'expires_in' => 600, // 10 minutes
+                    'expires_in' => $result['expires_in'] ?? 600,
+                    'debug' => $result['debug'] ?? null, // Include debug info in local mode
                 ]
             ]);
         }
@@ -150,8 +157,8 @@ class AuthController extends Controller
     public function verifyOTP(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'phone' => 'required|string|regex:/^\+994[0-9]{9}$/',
-            'code' => 'required|string|size:6',
+            'phone' => 'required|string|regex:/^(\+994)?[0-9]{9,12}$/',
+            'code' => 'required|string|min:4|max:6',
             'name' => 'string|max:255',
         ]);
 
@@ -164,15 +171,21 @@ class AuthController extends Controller
         }
 
         $phone = $request->phone;
+        // Normalize phone number
+        if (!str_starts_with($phone, '+')) {
+            $phone = '+994' . ltrim($phone, '0');
+        }
+
         $code = $request->code;
 
-        // Verify OTP
-        $result = $this->otpService->verifyOTP($phone, $code);
+        // Verify OTP using verification service
+        $result = $this->verificationService->verifyCode($phone, $code, 'sms');
 
         if (!$result['success']) {
             return response()->json([
                 'status' => 'error',
-                'message' => $result['message']
+                'message' => $result['message'],
+                'debug' => $result['debug'] ?? null, // Include debug info in local mode
             ], 400);
         }
 
@@ -203,8 +216,162 @@ class AuthController extends Controller
                 'user' => $user,
                 'token' => $token,
                 'return_url' => $request->return_url ?? null,
+                'debug' => $result['debug'] ?? null, // Include debug info in local mode
             ]
         ]);
+    }
+
+    /**
+     * Send email verification code.
+     */
+    public function sendEmailVerification(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'email' => 'required|string|email|max:255',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $email = $request->email;
+
+        // Check if user exists
+        $user = User::where('email', $email)->first();
+
+        // Send verification code using verification service
+        $result = $this->verificationService->sendEmailVerification($email, $user);
+
+        if ($result['success']) {
+            return response()->json([
+                'status' => 'success',
+                'message' => $result['message'],
+                'data' => [
+                    'email' => $email,
+                    'expires_in' => $result['expires_in'] ?? 900,
+                    'debug' => $result['debug'] ?? null, // Include debug info in local mode
+                ]
+            ]);
+        }
+
+        return response()->json([
+            'status' => 'error',
+            'message' => $result['message']
+        ], 400);
+    }
+
+    /**
+     * Verify email code.
+     */
+    public function verifyEmailCode(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'email' => 'required|string|email|max:255',
+            'code' => 'required|string|min:4|max:6',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $email = $request->email;
+        $code = $request->code;
+
+        // Verify code using verification service
+        $result = $this->verificationService->verifyCode($email, $code, 'email');
+
+        if (!$result['success']) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $result['message'],
+                'debug' => $result['debug'] ?? null, // Include debug info in local mode
+            ], 400);
+        }
+
+        // Update user email verification status if logged in
+        if (Auth::check()) {
+            $user = Auth::user();
+            $user->update([
+                'email_verified_at' => now(),
+            ]);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Email verified successfully',
+                'data' => [
+                    'user' => $user,
+                    'debug' => $result['debug'] ?? null, // Include debug info in local mode
+                ]
+            ]);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Email verified successfully',
+            'data' => [
+                'email' => $email,
+                'debug' => $result['debug'] ?? null, // Include debug info in local mode
+            ]
+        ]);
+    }
+
+    /**
+     * Resend verification code.
+     */
+    public function resendCode(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'identifier' => 'required|string',
+            'type' => 'required|in:sms,email',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $identifier = $request->identifier;
+        $type = $request->type;
+
+        // Normalize phone number if SMS
+        if ($type === 'sms' && !str_starts_with($identifier, '+')) {
+            $identifier = '+994' . ltrim($identifier, '0');
+        }
+
+        // Resend code using verification service
+        $result = $this->verificationService->resendCode($identifier, $type);
+
+        if ($result['success']) {
+            return response()->json([
+                'status' => 'success',
+                'message' => $result['message'],
+                'data' => [
+                    'identifier' => $identifier,
+                    'type' => $type,
+                    'expires_in' => $result['expires_in'] ?? ($type === 'sms' ? 600 : 900),
+                    'debug' => $result['debug'] ?? null, // Include debug info in local mode
+                ]
+            ]);
+        }
+
+        return response()->json([
+            'status' => 'error',
+            'message' => $result['message'],
+            'data' => [
+                'retry_after' => $result['retry_after'] ?? null,
+            ]
+        ], 400);
     }
 
     /**

@@ -67,6 +67,21 @@ return [
 
     'timezone' => 'Asia/Baku',
     'locales' => ['az'],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Verification Mock Mode
+    |--------------------------------------------------------------------------
+    |
+    | When enabled, verification codes (SMS/Email) will be mocked for testing.
+    | The mock code "123456" will always be accepted in local environment.
+    | This is automatically enabled in local environment for easy testing.
+    |
+    */
+
+    'verification_mock' => env('VERIFICATION_MOCK_MODE', env('APP_ENV') === 'local'),
+    'mock_verification_code' => env('MOCK_VERIFICATION_CODE', '123456'),
+
     /*
     |--------------------------------------------------------------------------
     | Application Locale Configuration
