@@ -54,7 +54,7 @@ function App() {
           marginBottom: '24px',
           color: '#1a202c'
         }}>
-          Alertaz Admin Panel
+          Alert.az Admin Panel
         </h1>
         <p style={{
           fontSize: '24px',

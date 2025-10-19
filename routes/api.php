@@ -57,7 +57,7 @@ Route::middleware('auth:sanctum')->group(function () {
 // Simple hello world endpoint
 Route::get('/hello', function () {
     return response()->json([
-        'message' => 'Hello from Alertaz API!',
+        'message' => 'Hello from Alert.az API!',
         'status' => 'success',
         'timestamp' => now()->toDateTimeString()
     ]);
@@ -75,9 +75,9 @@ Route::get('/health', function () {
 // Language-specific hello endpoint
 Route::get('/{locale}/hello', function ($locale) {
     $messages = [
-        'az' => 'Salam Alertaz!',
-        'en' => 'Hello Alertaz!',
-        'ru' => 'Привет Alertaz!'
+        'az' => 'Salam Alert.az!',
+        'en' => 'Hello Alert.az!',
+        'ru' => 'Привет Alert.az!'
     ];
 
     return response()->json([
