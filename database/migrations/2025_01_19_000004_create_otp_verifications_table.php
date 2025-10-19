@@ -13,7 +13,9 @@ return new class extends Migration
     {
         Schema::create('otp_verifications', function (Blueprint $table) {
             $table->id();
-            $table->string('phone');
+            $table->enum('type', ['sms', 'email'])->default('sms');
+            $table->string('phone')->nullable();
+            $table->string('email')->nullable();
             $table->string('code', 6);
             $table->string('purpose')->default('login'); // login, verify, password_reset
             $table->integer('attempts')->default(0);
@@ -24,6 +26,8 @@ return new class extends Migration
             $table->timestamps();
 
             $table->index(['phone', 'code']);
+            $table->index(['type', 'phone']);
+            $table->index(['type', 'email']);
             $table->index('expires_at');
         });
     }
