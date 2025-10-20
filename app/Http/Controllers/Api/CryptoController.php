@@ -21,6 +21,59 @@ class CryptoController extends Controller
     }
 
     /**
+     * Get simplified list of cryptocurrencies for dropdowns/selection
+     */
+    public function getCryptoList()
+    {
+        try {
+            // Get top cryptocurrencies from database
+            $cryptos = CryptoPrice::orderByRank()
+                ->limit(50)
+                ->get(['coin_id', 'symbol', 'name', 'image'])
+                ->map(function ($crypto) {
+                    return [
+                        'id' => $crypto->coin_id,
+                        'symbol' => strtoupper($crypto->symbol),
+                        'name' => $crypto->name,
+                        'image' => $crypto->image,
+                    ];
+                });
+
+            // If database is empty, return popular cryptos as fallback
+            if ($cryptos->isEmpty()) {
+                $cryptos = collect([
+                    ['id' => 'bitcoin', 'symbol' => 'BTC', 'name' => 'Bitcoin', 'image' => null],
+                    ['id' => 'ethereum', 'symbol' => 'ETH', 'name' => 'Ethereum', 'image' => null],
+                    ['id' => 'binancecoin', 'symbol' => 'BNB', 'name' => 'BNB', 'image' => null],
+                    ['id' => 'ripple', 'symbol' => 'XRP', 'name' => 'XRP', 'image' => null],
+                    ['id' => 'cardano', 'symbol' => 'ADA', 'name' => 'Cardano', 'image' => null],
+                    ['id' => 'solana', 'symbol' => 'SOL', 'name' => 'Solana', 'image' => null],
+                    ['id' => 'dogecoin', 'symbol' => 'DOGE', 'name' => 'Dogecoin', 'image' => null],
+                    ['id' => 'polygon', 'symbol' => 'MATIC', 'name' => 'Polygon', 'image' => null],
+                ]);
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => $cryptos,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error fetching crypto list: ' . $e->getMessage());
+
+            // Return fallback list on error
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    ['id' => 'bitcoin', 'symbol' => 'BTC', 'name' => 'Bitcoin', 'image' => null],
+                    ['id' => 'ethereum', 'symbol' => 'ETH', 'name' => 'Ethereum', 'image' => null],
+                    ['id' => 'binancecoin', 'symbol' => 'BNB', 'name' => 'BNB', 'image' => null],
+                    ['id' => 'ripple', 'symbol' => 'XRP', 'name' => 'XRP', 'image' => null],
+                ],
+            ]);
+        }
+    }
+
+    /**
      * Get list of top cryptocurrencies
      */
     public function getMarkets(Request $request)

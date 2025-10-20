@@ -5,6 +5,7 @@ use Illuminate\Support\Facades\Route;
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\PersonalAlertController;
+use App\Http\Controllers\Api\CryptoController;
 
 // Authentication Routes
 Route::prefix('auth')->group(function () {
@@ -53,6 +54,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/validate-channels', [PersonalAlertController::class, 'validateChannels']);
     });
 });
+
+// Cryptocurrency Routes (public)
+Route::get('/cryptos', [CryptoController::class, 'getCryptoList']);
 
 // Simple hello world endpoint
 Route::get('/hello', function () {
