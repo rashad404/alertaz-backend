@@ -39,6 +39,21 @@ class SMSChannel implements NotificationChannel
             $smsMessage = substr($smsMessage, 0, 447) . '...';
         }
 
+        // Mock mode for alert notifications
+        if (config('app.notifications_mock')) {
+            Log::info("📱 [MOCK] SMS notification to {$user->phone}:", [
+                'alert' => $alert->name,
+                'message' => $smsMessage,
+                'user_id' => $user->id,
+            ]);
+
+            return [
+                'success' => true,
+                'error' => null,
+                'mocked' => true,
+            ];
+        }
+
         return $this->sendSMS($user->phone, $smsMessage);
     }
 

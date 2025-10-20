@@ -33,6 +33,21 @@ class TelegramChannel implements NotificationChannel
         // Format message for Telegram (supports Markdown)
         $telegramMessage = $this->formatMessage($message);
 
+        // Mock mode for alert notifications
+        if (config('app.notifications_mock')) {
+            Log::info("✈️ [MOCK] Telegram notification to {$user->telegram_chat_id}:", [
+                'alert' => $alert->name,
+                'message' => $telegramMessage,
+                'user_id' => $user->id,
+            ]);
+
+            return [
+                'success' => true,
+                'error' => null,
+                'mocked' => true,
+            ];
+        }
+
         return $this->sendMessage($user->telegram_chat_id, $telegramMessage);
     }
 

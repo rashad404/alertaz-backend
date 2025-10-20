@@ -4,15 +4,14 @@ namespace App\Services\Monitoring;
 
 use App\Models\PersonalAlert;
 use App\Models\AlertType;
+use App\Models\CryptoPrice;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
 
 class CryptoMonitor extends BaseMonitor
 {
-    private const BINANCE_API_URL = 'https://api.binance.com/api/v3';
-    private const COINGECKO_API_URL = 'https://api.coingecko.com/api/v3';
-    private const CACHE_TTL = 60; // Cache for 1 minute to avoid rate limits
+    private const CACHE_TTL = 60; // Cache for 1 minute to avoid excessive DB queries
 
     /**
      * Check all active crypto alerts.
@@ -39,7 +38,7 @@ class CryptoMonitor extends BaseMonitor
     }
 
     /**
-     * Fetch current crypto data for the alert.
+     * Fetch current crypto data for the alert from database.
      */
     protected function fetchCurrentData(PersonalAlert $alert): ?array
     {
@@ -57,113 +56,38 @@ class CryptoMonitor extends BaseMonitor
             return $cachedData;
         }
 
-        // Try Binance first
-        $data = $this->fetchFromBinance($asset);
+        // Fetch from database
+        $cryptoPrice = CryptoPrice::where('symbol', strtolower($asset))
+            ->orWhere('coin_id', strtolower($asset))
+            ->first();
 
-        // If Binance fails, try CoinGecko
-        if (!$data) {
-            $data = $this->fetchFromCoinGecko($asset);
+        if (!$cryptoPrice) {
+            Log::warning("Crypto price not found in database for: {$asset}");
+            return null;
         }
 
-        if ($data) {
-            // Cache the data
-            Cache::put($cacheKey, $data, self::CACHE_TTL);
-        }
+        // Format data for alert checking
+        $data = [
+            'symbol' => strtoupper($cryptoPrice->symbol),
+            'price' => (float) $cryptoPrice->current_price,
+            'change_24h' => (float) $cryptoPrice->price_change_percentage_24h,
+            'change_1h' => (float) $cryptoPrice->price_change_percentage_1h,
+            'change_7d' => (float) $cryptoPrice->price_change_percentage_7d,
+            'volume' => (float) $cryptoPrice->total_volume,
+            'high_24h' => (float) $cryptoPrice->high_24h,
+            'low_24h' => (float) $cryptoPrice->low_24h,
+            'market_cap' => (float) $cryptoPrice->market_cap,
+            'market_cap_rank' => $cryptoPrice->market_cap_rank,
+            'source' => 'database',
+            'timestamp' => $cryptoPrice->last_updated?->toIso8601String() ?? now()->toIso8601String(),
+        ];
+
+        // Cache the data
+        Cache::put($cacheKey, $data, self::CACHE_TTL);
 
         return $data;
     }
 
-    /**
-     * Fetch price from Binance.
-     */
-    private function fetchFromBinance(string $symbol): ?array
-    {
-        try {
-            // Convert symbol to Binance format (e.g., BTC -> BTCUSDT)
-            $pair = $symbol . 'USDT';
-
-            $response = Http::timeout(10)->get(self::BINANCE_API_URL . '/ticker/24hr', [
-                'symbol' => $pair,
-            ]);
-
-            if ($response->successful()) {
-                $data = $response->json();
-
-                return [
-                    'symbol' => $symbol,
-                    'price' => (float) $data['lastPrice'],
-                    'change_24h' => (float) $data['priceChangePercent'],
-                    'volume' => (float) $data['volume'],
-                    'high_24h' => (float) $data['highPrice'],
-                    'low_24h' => (float) $data['lowPrice'],
-                    'source' => 'binance',
-                    'timestamp' => now()->toIso8601String(),
-                ];
-            }
-        } catch (\Exception $e) {
-            Log::warning("Binance API error for {$symbol}: " . $e->getMessage());
-        }
-
-        return null;
-    }
-
-    /**
-     * Fetch price from CoinGecko.
-     */
-    private function fetchFromCoinGecko(string $symbol): ?array
-    {
-        try {
-            // Map common symbols to CoinGecko IDs
-            $coinIds = [
-                'BTC' => 'bitcoin',
-                'ETH' => 'ethereum',
-                'BNB' => 'binancecoin',
-                'ADA' => 'cardano',
-                'SOL' => 'solana',
-                'XRP' => 'ripple',
-                'DOT' => 'polkadot',
-                'DOGE' => 'dogecoin',
-                'AVAX' => 'avalanche-2',
-                'MATIC' => 'matic-network',
-                'SHIB' => 'shiba-inu',
-                'LTC' => 'litecoin',
-                'UNI' => 'uniswap',
-                'LINK' => 'chainlink',
-                'ATOM' => 'cosmos',
-            ];
-
-            $coinId = $coinIds[strtoupper($symbol)] ?? strtolower($symbol);
-
-            $response = Http::timeout(10)->get(self::COINGECKO_API_URL . '/simple/price', [
-                'ids' => $coinId,
-                'vs_currencies' => 'usd',
-                'include_24hr_change' => 'true',
-                'include_24hr_vol' => 'true',
-                'include_last_updated_at' => 'true',
-            ]);
-
-            if ($response->successful()) {
-                $data = $response->json();
-
-                if (isset($data[$coinId])) {
-                    $coinData = $data[$coinId];
-
-                    return [
-                        'symbol' => $symbol,
-                        'price' => (float) $coinData['usd'],
-                        'change_24h' => (float) ($coinData['usd_24h_change'] ?? 0),
-                        'volume' => (float) ($coinData['usd_24h_vol'] ?? 0),
-                        'source' => 'coingecko',
-                        'timestamp' => now()->toIso8601String(),
-                    ];
-                }
-            }
-        } catch (\Exception $e) {
-            Log::warning("CoinGecko API error for {$symbol}: " . $e->getMessage());
-        }
-
-        return null;
-    }
 
     /**
      * Format alert message specifically for crypto.

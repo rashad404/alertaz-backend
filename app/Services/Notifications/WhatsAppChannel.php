@@ -34,6 +34,21 @@ class WhatsAppChannel implements NotificationChannel
         // Format message for WhatsApp
         $whatsappMessage = $this->formatMessage($message);
 
+        // Mock mode for alert notifications
+        if (config('app.notifications_mock')) {
+            Log::info("💬 [MOCK] WhatsApp notification to {$user->whatsapp_number}:", [
+                'alert' => $alert->name,
+                'message' => $whatsappMessage,
+                'user_id' => $user->id,
+            ]);
+
+            return [
+                'success' => true,
+                'error' => null,
+                'mocked' => true,
+            ];
+        }
+
         return $this->sendWhatsApp($user->whatsapp_number, $whatsappMessage);
     }
 

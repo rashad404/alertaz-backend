@@ -24,6 +24,21 @@ class SlackChannel implements NotificationChannel
         // Format message for Slack
         $slackMessage = $this->formatMessage($message, $alert);
 
+        // Mock mode for alert notifications
+        if (config('app.notifications_mock')) {
+            Log::info("📢 [MOCK] Slack notification to {$user->slack_webhook_url}:", [
+                'alert' => $alert->name,
+                'message' => $slackMessage,
+                'user_id' => $user->id,
+            ]);
+
+            return [
+                'success' => true,
+                'error' => null,
+                'mocked' => true,
+            ];
+        }
+
         return $this->sendToSlack($user->slack_webhook_url, $slackMessage, $alert->name);
     }
 

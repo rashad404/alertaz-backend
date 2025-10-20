@@ -45,6 +45,21 @@ class PushChannel implements NotificationChannel
             ];
         }
 
+        // Mock mode for alert notifications
+        if (config('app.notifications_mock')) {
+            Log::info("🔔 [MOCK] Push notification to user {$user->id}:", [
+                'alert' => $alert->name,
+                'message' => $message,
+                'user_id' => $user->id,
+            ]);
+
+            return [
+                'success' => true,
+                'error' => null,
+                'mocked' => true,
+            ];
+        }
+
         // Format notification payload
         $payload = $this->formatPayload($message, $alert, $data);
 

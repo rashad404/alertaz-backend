@@ -21,6 +21,21 @@ class EmailChannel implements NotificationChannel
             ];
         }
 
+        // Mock mode - log instead of sending
+        if (config('app.notifications_mock')) {
+            Log::info("📧 [MOCK] Email notification to {$user->email}:", [
+                'alert' => $alert->name,
+                'message' => $message,
+                'user_id' => $user->id,
+            ]);
+
+            return [
+                'success' => true,
+                'error' => null,
+                'mocked' => true,
+            ];
+        }
+
         try {
             // Convert markdown-style message to HTML
             $htmlMessage = $this->markdownToHtml($message);

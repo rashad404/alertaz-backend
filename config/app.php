@@ -84,6 +84,19 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Notifications Mock Mode
+    |--------------------------------------------------------------------------
+    |
+    | When enabled, all alert notifications will be mocked (logged but not sent).
+    | This includes Email, SMS, Telegram, WhatsApp, Slack, and Push notifications.
+    | Automatically enabled in local environment to save costs and avoid spam.
+    |
+    */
+
+    'notifications_mock' => env('NOTIFICATIONS_MOCK_MODE', env('APP_ENV') === 'local'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Locale Configuration
     |--------------------------------------------------------------------------
     |
