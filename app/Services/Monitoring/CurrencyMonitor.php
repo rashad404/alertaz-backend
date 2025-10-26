@@ -261,50 +261,11 @@ class CurrencyMonitor extends BaseMonitor
     }
 
     /**
-     * Format alert message specifically for currency.
+     * Format alert message - returns simple identifier for frontend translation.
      */
     protected function formatAlertMessage(PersonalAlert $alert, array $currentData): string
     {
-        $currencyPair = $alert->asset;
-        $condition = $alert->conditions;
-        $rate = $currentData['rate'] ?? 0;
-        $changePercent = $currentData['change_percent'] ?? 0;
-        $change = $currentData['change'] ?? 0;
-
-        $message = "💱 **Currency Alert: {$alert->name}**\n\n";
-        $message .= "💵 **{$currencyPair}** has reached your target!\n\n";
-        $message .= "📊 **Exchange Rate Details:**\n";
-        $message .= "• Current Rate: " . number_format($rate, 4) . "\n";
-        $message .= "• Your Target: {$condition['field']} {$condition['operator']} {$condition['value']}\n";
-
-        if (isset($currentData['bid']) && isset($currentData['ask'])) {
-            $message .= "• Buy/Sell: " . number_format($currentData['bid'], 4) . " / " . number_format($currentData['ask'], 4) . "\n";
-        }
-
-        $message .= "• Change: " . ($change >= 0 ? '📈 +' : '📉 ') . number_format(abs($change), 4);
-        $message .= " (" . ($changePercent >= 0 ? '+' : '') . number_format($changePercent, 2) . "%)\n";
-
-        if (isset($currentData['previous_rate']) && $currentData['previous_rate']) {
-            $message .= "• Previous Rate: " . number_format($currentData['previous_rate'], 4) . "\n";
-        }
-
-        // Add source info
-        $sourceNames = [
-            'cbar' => 'Central Bank of Azerbaijan',
-            'exchangerate-api' => 'Exchange Rate API',
-            'mock' => 'Mock Data (Dev)',
-        ];
-        $source = $currentData['source'] ?? 'unknown';
-        $message .= "• Source: " . ($sourceNames[$source] ?? $source) . "\n";
-
-        // Add conversion example
-        $amount = 100;
-        $converted = $amount * $rate;
-        $message .= "\n💡 **Example:** {$amount} {$currentData['from_currency']} = " .
-                   number_format($converted, 2) . " {$currentData['to_currency']}\n";
-
-        $message .= "\n⏰ " . now()->format('Y-m-d H:i:s') . " (Asia/Baku)";
-
-        return $message;
+        // Return simple type identifier that frontend will translate
+        return 'currency_target_reached';
     }
 }

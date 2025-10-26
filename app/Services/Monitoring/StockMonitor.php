@@ -221,45 +221,11 @@ class StockMonitor extends BaseMonitor
     }
 
     /**
-     * Format alert message specifically for stocks.
+     * Format alert message - returns simple identifier for frontend translation.
      */
     protected function formatAlertMessage(PersonalAlert $alert, array $currentData): string
     {
-        $symbol = $alert->asset;
-        $condition = $alert->conditions;
-        $currentPrice = $currentData['price'] ?? 0;
-        $changePercent = $currentData['change_percent'] ?? 0;
-        $change = $currentData['change'] ?? 0;
-
-        $message = "📈 **Stock Alert: {$alert->name}**\n\n";
-        $message .= "🏢 **{$symbol}** has triggered your alert!\n\n";
-        $message .= "📊 **Market Update:**\n";
-        $message .= "• Current Price: $" . number_format($currentPrice, 2) . "\n";
-        $message .= "• Your Target: {$condition['field']} {$condition['operator']} {$condition['value']}\n";
-        $message .= "• Change: " . ($change >= 0 ? '+' : '') . "$" . number_format($change, 2);
-        $message .= " (" . ($changePercent >= 0 ? '+' : '') . number_format($changePercent, 2) . "%)\n";
-
-        if (isset($currentData['volume'])) {
-            $message .= "• Volume: " . number_format($currentData['volume']) . " shares\n";
-        }
-
-        if (isset($currentData['high']) && isset($currentData['low'])) {
-            $message .= "• Day Range: $" . number_format($currentData['low'], 2) . " - $" . number_format($currentData['high'], 2) . "\n";
-        }
-
-        if (isset($currentData['market_cap']) && $currentData['market_cap'] > 0) {
-            $marketCap = $currentData['market_cap'];
-            if ($marketCap >= 1000000000000) {
-                $message .= "• Market Cap: $" . number_format($marketCap / 1000000000000, 2) . "T\n";
-            } elseif ($marketCap >= 1000000000) {
-                $message .= "• Market Cap: $" . number_format($marketCap / 1000000000, 2) . "B\n";
-            } else {
-                $message .= "• Market Cap: $" . number_format($marketCap / 1000000, 2) . "M\n";
-            }
-        }
-
-        $message .= "\n⏰ " . now()->format('Y-m-d H:i:s') . " (Asia/Baku)";
-
-        return $message;
+        // Return simple type identifier that frontend will translate
+        return 'stock_target_reached';
     }
 }

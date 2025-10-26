@@ -47,29 +47,28 @@ class PushChannel implements NotificationChannel
             ];
         }
 
-        // Format notification payload
-        $payload = $this->formatPayload($message, $alert, $data);
-        $title = $payload['title'];
-        $body = $payload['body'];
-
         // Mock mode for alert notifications
         $isMockMode = config('app.notifications_mock', env('NOTIFICATIONS_MOCK_MODE', false));
 
         if ($isMockMode) {
             Log::info("🔔 [MOCK] Push notification to user {$user->id}:", [
                 'alert' => $alert->name,
-                'title' => $title,
-                'body' => $body,
+                'type' => $message,  // Type key like "website_up"
                 'user_id' => $user->id,
             ]);
 
-            // Log to database even in mock mode
+            // Save type key and structured data (NO pre-translated text)
             NotificationLog::create([
                 'user_id' => $user->id,
                 'type' => 'push',
-                'title' => $title,
-                'body' => $body,
-                'data' => $data,
+                'title' => $message,  // Type key: "website_up", "crypto_target_reached", etc.
+                'body' => null,       // No pre-formatted body - frontend will generate it
+                'data' => array_merge($data, [
+                    'alertId' => $alert->id,
+                    'alertType' => $alert->alertType->slug ?? 'unknown',
+                    'alertName' => $alert->name,
+                    'asset' => $alert->asset,
+                ]),
                 'is_mock' => true,
                 'is_read' => false,
             ]);
@@ -80,6 +79,9 @@ class PushChannel implements NotificationChannel
                 'mocked' => true,
             ];
         }
+
+        // Format payload for actual push notification
+        $payload = $this->formatPayload($message, $alert, $data);
 
         // Real mode: send to all user's push subscriptions
         $subscriptions = PushSubscription::where('user_id', $user->id)->get();
@@ -101,13 +103,17 @@ class PushChannel implements NotificationChannel
             }
         }
 
-        // Log to database
+        // Save type key and structured data (NO pre-translated text)
         NotificationLog::create([
             'user_id' => $user->id,
             'type' => 'push',
-            'title' => $title,
-            'body' => $body,
+            'title' => $message,  // Type key: "website_up", "crypto_target_reached", etc.
+            'body' => null,       // No pre-formatted body - frontend will generate it
             'data' => array_merge($data, [
+                'alertId' => $alert->id,
+                'alertType' => $alert->alertType->slug ?? 'unknown',
+                'alertName' => $alert->name,
+                'asset' => $alert->asset,
                 'sent_count' => $sentCount,
                 'total_subscriptions' => $subscriptions->count(),
             ]),

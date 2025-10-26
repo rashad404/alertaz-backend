@@ -188,31 +188,11 @@ class WeatherMonitor extends BaseMonitor
     }
 
     /**
-     * Format alert message specifically for weather.
+     * Format alert message - returns simple identifier for frontend translation.
      */
     protected function formatAlertMessage(PersonalAlert $alert, array $currentData): string
     {
-        $location = $alert->asset;
-        $condition = $alert->conditions;
-        $field = $condition['field'];
-
-        $message = "🌤️ **Weather Alert: {$alert->name}**\n\n";
-        $message .= "📍 **{$location}**\n\n";
-        $message .= "⚠️ **Alert Triggered:**\n";
-        $message .= "• Condition: {$field} {$condition['operator']} {$condition['value']}\n";
-        $message .= "• Current Value: " . $currentData[$field] . "\n\n";
-        $message .= "🌡️ **Current Conditions:**\n";
-        $message .= "• Temperature: {$currentData['temperature']}°C (feels like {$currentData['feels_like']}°C)\n";
-        $message .= "• Humidity: {$currentData['humidity']}%\n";
-        $message .= "• Wind: {$currentData['wind_speed']} m/s\n";
-
-        if ($currentData['rain_1h'] > 0) {
-            $message .= "• Rain (1h): {$currentData['rain_1h']} mm\n";
-        }
-
-        $message .= "• Description: {$currentData['description']}\n";
-        $message .= "\n⏰ " . now()->format('Y-m-d H:i:s') . " (Asia/Baku)";
-
-        return $message;
+        // Return simple type identifier that frontend will translate
+        return 'weather_alert';
     }
 }

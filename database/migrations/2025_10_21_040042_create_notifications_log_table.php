@@ -15,8 +15,8 @@ return new class extends Migration
             $table->id();
             $table->foreignId('user_id')->constrained()->onDelete('cascade');
             $table->string('type'); // email, sms, push, telegram, whatsapp
-            $table->string('title');
-            $table->text('body');
+            $table->string('title'); // Type key like "website_up", "crypto_target_reached"
+            $table->text('body')->nullable(); // Nullable - frontend generates translated text
             $table->json('data')->nullable(); // Additional data for the notification
             $table->boolean('is_mock')->default(false); // Was this a mock notification?
             $table->boolean('is_read')->default(false); // Has user read this notification?

@@ -118,28 +118,12 @@ abstract class BaseMonitor
 
     /**
      * Format the alert message for notifications.
+     * Child classes MUST return a simple type key (e.g., "website_up", "crypto_target_reached")
+     * that will be translated by the frontend based on user's language.
+     *
+     * DO NOT return formatted text with emojis or translations here.
      */
-    protected function formatAlertMessage(PersonalAlert $alert, array $currentData): string
-    {
-        $alertType = $alert->alertType->name ?? 'Alert';
-        $asset = $alert->asset ?? '';
-        $condition = $alert->conditions;
-
-        $currentValue = data_get($currentData, $condition['field']);
-
-        $message = "🚨 **{$alert->name}**\n\n";
-        $message .= "Alert Type: {$alertType}\n";
-
-        if ($asset) {
-            $message .= "Asset: {$asset}\n";
-        }
-
-        $message .= "Condition: {$condition['field']} {$condition['operator']} {$condition['value']}\n";
-        $message .= "Current Value: {$currentValue}\n";
-        $message .= "Time: " . now()->format('Y-m-d H:i:s');
-
-        return $message;
-    }
+    abstract protected function formatAlertMessage(PersonalAlert $alert, array $currentData): string;
 
     /**
      * Parse API response safely.
