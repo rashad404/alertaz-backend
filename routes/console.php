@@ -17,6 +17,13 @@ Schedule::command('bank-rates:fetch')->everyThreeHours();
 // Schedule crypto prices fetch every 5 minutes
 Schedule::command('crypto:fetch-prices')->everyFiveMinutes();
 
+// Schedule stock prices fetch every minute during market hours (9:30 AM - 4:00 PM ET)
+Schedule::command('stock:fetch-prices')->everyMinute()
+    ->between('09:30', '16:00')
+    ->weekdays()
+    ->withoutOverlapping()
+    ->runInBackground();
+
 // AI News Generation - Daily summary at 5:00 PM
 Schedule::command('news:generate-exchange-summary')->dailyAt('17:00');
 

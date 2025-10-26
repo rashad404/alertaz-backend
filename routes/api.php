@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\PersonalAlertController;
 use App\Http\Controllers\Api\CryptoController;
+use App\Http\Controllers\Api\StockController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\AlertParseController;
 
@@ -84,6 +85,16 @@ Route::get('/notifications/vapid-public-key', [NotificationController::class, 'g
 
 // Cryptocurrency Routes (public)
 Route::get('/cryptos', [CryptoController::class, 'getCryptoList']);
+
+// Stock Routes (public)
+Route::prefix('stocks')->group(function () {
+    Route::get('/', [StockController::class, 'getStockList']);
+    Route::get('/markets', [StockController::class, 'getMarkets']);
+    Route::get('/search', [StockController::class, 'searchStocks']);
+    Route::get('/top-gainers', [StockController::class, 'getTopGainers']);
+    Route::get('/top-losers', [StockController::class, 'getTopLosers']);
+    Route::get('/{symbol}', [StockController::class, 'getStockDetails']);
+});
 
 // Simple hello world endpoint
 Route::get('/hello', function () {

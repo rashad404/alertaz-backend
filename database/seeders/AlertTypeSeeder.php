@@ -103,9 +103,9 @@ class AlertTypeSeeder extends Seeder
                     'ru' => 'Акции'
                 ],
                 'description' => [
-                    'az' => 'Səhm bazarı xəbərdarlıqları',
-                    'en' => 'Stock market alerts',
-                    'ru' => 'Биржевые оповещения'
+                    'az' => 'Səhm bazarı xəbərdarlıqları (Top 100 US)',
+                    'en' => 'Stock market alerts (Top 100 US)',
+                    'ru' => 'Биржевые оповещения (Топ 100 США)'
                 ],
                 'icon' => 'chart',
                 'configuration_schema' => [
@@ -117,7 +117,7 @@ class AlertTypeSeeder extends Seeder
                     'change_percent' => 'Change %',
                     'volume' => 'Volume'
                 ],
-                'data_source' => 'yahoo_finance_api',
+                'data_source' => 'twelve_data_api',
                 'check_interval' => 300,
                 'is_active' => true,
                 'sort_order' => 4

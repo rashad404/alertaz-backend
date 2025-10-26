@@ -63,4 +63,9 @@ return [
         'subject' => env('VAPID_SUBJECT', 'mailto:admin@alert.az'),
     ],
 
+    'twelve_data' => [
+        'api_key' => env('TWELVE_DATA_API_KEY'),
+        'base_url' => 'https://api.twelvedata.com',
+    ],
+
 ];
