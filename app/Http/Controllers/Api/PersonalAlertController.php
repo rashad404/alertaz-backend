@@ -179,6 +179,7 @@ class PersonalAlertController extends Controller
 
         $validator = Validator::make($request->all(), [
             'name' => 'string|max:255',
+            'asset' => 'string|nullable',
             'conditions' => 'array',
             'conditions.field' => 'string',
             'conditions.operator' => 'in:equals,greater,greater_equal,less,less_equal,not_equals',
@@ -213,6 +214,7 @@ class PersonalAlertController extends Controller
 
         $alert->update($request->only([
             'name',
+            'asset',
             'conditions',
             'notification_channels',
             'is_active',
