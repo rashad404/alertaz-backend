@@ -26,9 +26,9 @@ class CryptoController extends Controller
     public function getCryptoList()
     {
         try {
-            // Get top cryptocurrencies from database
+            // Get top cryptocurrencies from database (increased to 100 to include more altcoins)
             $cryptos = CryptoPrice::orderByRank()
-                ->limit(50)
+                ->limit(100)
                 ->get(['coin_id', 'symbol', 'name', 'image'])
                 ->map(function ($crypto) {
                     return [
@@ -44,6 +44,7 @@ class CryptoController extends Controller
                 $cryptos = collect([
                     ['id' => 'bitcoin', 'symbol' => 'BTC', 'name' => 'Bitcoin', 'image' => null],
                     ['id' => 'ethereum', 'symbol' => 'ETH', 'name' => 'Ethereum', 'image' => null],
+                    ['id' => 'ethereum-classic', 'symbol' => 'ETC', 'name' => 'Ethereum Classic', 'image' => null],
                     ['id' => 'binancecoin', 'symbol' => 'BNB', 'name' => 'BNB', 'image' => null],
                     ['id' => 'ripple', 'symbol' => 'XRP', 'name' => 'XRP', 'image' => null],
                     ['id' => 'cardano', 'symbol' => 'ADA', 'name' => 'Cardano', 'image' => null],
@@ -54,7 +55,7 @@ class CryptoController extends Controller
             }
 
             return response()->json([
-                'success' => true,
+                'status' => 'success',
                 'data' => $cryptos,
             ]);
         } catch (\Exception $e) {
@@ -62,7 +63,7 @@ class CryptoController extends Controller
 
             // Return fallback list on error
             return response()->json([
-                'success' => true,
+                'status' => 'success',
                 'data' => [
                     ['id' => 'bitcoin', 'symbol' => 'BTC', 'name' => 'Bitcoin', 'image' => null],
                     ['id' => 'ethereum', 'symbol' => 'ETH', 'name' => 'Ethereum', 'image' => null],

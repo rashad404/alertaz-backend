@@ -4,6 +4,8 @@ namespace App\Services\Notifications;
 
 use App\Models\User;
 use App\Models\PersonalAlert;
+use App\Models\PushSubscription;
+use App\Models\NotificationLog;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Minishlink\WebPush\WebPush;
@@ -45,12 +47,31 @@ class PushChannel implements NotificationChannel
             ];
         }
 
+        // Format notification payload
+        $payload = $this->formatPayload($message, $alert, $data);
+        $title = $payload['title'];
+        $body = $payload['body'];
+
         // Mock mode for alert notifications
-        if (config('app.notifications_mock')) {
+        $isMockMode = config('app.notifications_mock', env('NOTIFICATIONS_MOCK_MODE', false));
+
+        if ($isMockMode) {
             Log::info("🔔 [MOCK] Push notification to user {$user->id}:", [
                 'alert' => $alert->name,
-                'message' => $message,
+                'title' => $title,
+                'body' => $body,
                 'user_id' => $user->id,
+            ]);
+
+            // Log to database even in mock mode
+            NotificationLog::create([
+                'user_id' => $user->id,
+                'type' => 'push',
+                'title' => $title,
+                'body' => $body,
+                'data' => $data,
+                'is_mock' => true,
+                'is_read' => false,
             ]);
 
             return [
@@ -60,10 +81,52 @@ class PushChannel implements NotificationChannel
             ];
         }
 
-        // Format notification payload
-        $payload = $this->formatPayload($message, $alert, $data);
+        // Real mode: send to all user's push subscriptions
+        $subscriptions = PushSubscription::where('user_id', $user->id)->get();
+        $sentCount = 0;
+        $errors = [];
 
-        return $this->sendPushNotification($user->push_token, $payload);
+        foreach ($subscriptions as $sub) {
+            $result = $this->sendToSubscription($sub, $payload);
+
+            if ($result['success']) {
+                $sentCount++;
+            } else {
+                $errors[] = $result['error'];
+
+                // Remove expired subscription
+                if (str_contains($result['error'] ?? '', '410') || str_contains($result['error'] ?? '', 'expired')) {
+                    $sub->delete();
+                }
+            }
+        }
+
+        // Log to database
+        NotificationLog::create([
+            'user_id' => $user->id,
+            'type' => 'push',
+            'title' => $title,
+            'body' => $body,
+            'data' => array_merge($data, [
+                'sent_count' => $sentCount,
+                'total_subscriptions' => $subscriptions->count(),
+            ]),
+            'is_mock' => false,
+            'is_read' => false,
+        ]);
+
+        if ($sentCount === 0) {
+            return [
+                'success' => false,
+                'error' => 'Failed to send to any subscription: ' . implode(', ', $errors),
+            ];
+        }
+
+        return [
+            'success' => true,
+            'error' => null,
+            'sent_count' => $sentCount,
+        ];
     }
 
     /**
@@ -98,7 +161,68 @@ class PushChannel implements NotificationChannel
      */
     public function isConfigured(User $user): bool
     {
-        return !empty($user->push_token) && $this->webPush !== null;
+        return PushSubscription::where('user_id', $user->id)->exists() && $this->webPush !== null;
+    }
+
+    /**
+     * Send notification to a specific subscription.
+     */
+    private function sendToSubscription(PushSubscription $pushSub, array $payload): array
+    {
+        if (!$this->webPush) {
+            return [
+                'success' => false,
+                'error' => 'WebPush not configured',
+            ];
+        }
+
+        try {
+            // Create subscription object from database record
+            $subscription = Subscription::create([
+                'endpoint' => $pushSub->endpoint,
+                'keys' => [
+                    'p256dh' => $pushSub->public_key,
+                    'auth' => $pushSub->auth_token,
+                ],
+                'contentEncoding' => 'aesgcm',
+            ]);
+
+            // Send the notification
+            $report = $this->webPush->sendOneNotification(
+                $subscription,
+                json_encode($payload),
+                ['TTL' => 86400] // 24 hours
+            );
+
+            // Check if successful
+            if ($report->isSuccess()) {
+                return [
+                    'success' => true,
+                    'error' => null,
+                ];
+            }
+
+            // Handle failure
+            $endpoint = $report->getEndpoint();
+            $reason = $report->getReason();
+            $statusCode = $report->getStatusCode();
+
+            // If subscription is invalid (410 Gone), mark for removal
+            if ($statusCode === 410) {
+                Log::warning("Push subscription expired for endpoint: {$endpoint}");
+            }
+
+            return [
+                'success' => false,
+                'error' => "Push failed: {$reason} (Status: {$statusCode})",
+            ];
+        } catch (\Exception $e) {
+            Log::error("Push notification error: " . $e->getMessage());
+            return [
+                'success' => false,
+                'error' => $e->getMessage(),
+            ];
+        }
     }
 
     /**

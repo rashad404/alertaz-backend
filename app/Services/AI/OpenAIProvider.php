@@ -15,19 +15,37 @@ class OpenAIProvider implements AIProviderInterface
         $this->config = config('ai.providers.openai');
     }
 
-    public function generateText(string $prompt): string
+    /**
+     * Select an API key randomly for load balancing
+     *
+     * @return string
+     * @throws \Exception
+     */
+    protected function selectApiKey(): string
+    {
+        $apiKeys = $this->config['api_keys'] ?? [];
+
+        if (empty($apiKeys)) {
+            throw new \Exception('No OpenAI API keys configured. Check OPENAI_API_KEYS or OPENAI_API_KEY in .env');
+        }
+
+        return $apiKeys[array_rand($apiKeys)];
+    }
+
+    public function generateText(string $prompt, $maxTokens = null): string
     {
         if (!$this->isAvailable()) {
-            throw new \Exception('OpenAI provider is not properly configured. Check OPENAI_API_KEY in .env');
+            throw new \Exception('OpenAI provider is not properly configured. Check OPENAI_API_KEYS or OPENAI_API_KEY in .env');
         }
 
         try {
+            $apiKey = $this->selectApiKey();
             $response = Http::withHeaders([
-                'Authorization' => 'Bearer ' . $this->config['api_key'],
+                'Authorization' => 'Bearer ' . $apiKey,
                 'Content-Type' => 'application/json',
             ])->post($this->config['api_url'], [
                 'model' => $this->config['model'],
-                'max_tokens' => $this->config['max_tokens'],
+                'max_tokens' => $maxTokens ?? $this->config['max_tokens'],
                 'messages' => [
                     [
                         'role' => 'user',
@@ -62,7 +80,7 @@ class OpenAIProvider implements AIProviderInterface
 
     public function isAvailable(): bool
     {
-        return !empty($this->config['api_key']) &&
+        return !empty($this->config['api_keys']) &&
                !empty($this->config['model']) &&
                !empty($this->config['api_url']);
     }

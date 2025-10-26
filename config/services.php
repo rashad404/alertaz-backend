@@ -57,4 +57,10 @@ return [
         'base_url' => env('SMS_BASE_URL', 'https://sms-provider.az/api'),
     ],
 
+    'push' => [
+        'public_key' => env('VAPID_PUBLIC_KEY'),
+        'private_key' => env('VAPID_PRIVATE_KEY'),
+        'subject' => env('VAPID_SUBJECT', 'mailto:admin@alert.az'),
+    ],
+
 ];

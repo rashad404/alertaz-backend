@@ -6,6 +6,8 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\PersonalAlertController;
 use App\Http\Controllers\Api\CryptoController;
+use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\AlertParseController;
 
 // Authentication Routes
 Route::prefix('auth')->group(function () {
@@ -31,6 +33,9 @@ Route::prefix('auth')->group(function () {
         ->where('provider', 'google|facebook');
 });
 
+// Public alert parsing (no auth required for better UX)
+Route::post('/alerts/parse', [AlertParseController::class, 'parse']);
+
 // Protected Routes
 Route::middleware('auth:sanctum')->group(function () {
     // User Profile
@@ -53,7 +58,29 @@ Route::middleware('auth:sanctum')->group(function () {
         // Validate notification channels
         Route::post('/validate-channels', [PersonalAlertController::class, 'validateChannels']);
     });
+
+    // Push Notifications
+    Route::prefix('notifications')->group(function () {
+        // Push subscription management
+        Route::post('/subscribe', [NotificationController::class, 'subscribe']);
+        Route::post('/unsubscribe', [NotificationController::class, 'unsubscribe']);
+
+        // Notification history
+        Route::get('/', [NotificationController::class, 'index']);
+        Route::get('/unread-count', [NotificationController::class, 'getUnreadCount']);
+
+        // Mark as read
+        Route::put('/{id}/read', [NotificationController::class, 'markAsRead']);
+        Route::post('/mark-all-read', [NotificationController::class, 'markAllAsRead']);
+
+        // Test notification
+        Route::post('/test', [NotificationController::class, 'sendTestNotification']);
+    });
 });
+
+// Public notification routes (no auth required)
+// VAPID public key needs to be accessible before user subscribes
+Route::get('/notifications/vapid-public-key', [NotificationController::class, 'getVapidPublicKey']);
 
 // Cryptocurrency Routes (public)
 Route::get('/cryptos', [CryptoController::class, 'getCryptoList']);

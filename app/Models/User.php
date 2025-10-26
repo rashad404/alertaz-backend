@@ -85,6 +85,22 @@ class User extends Authenticatable
     }
 
     /**
+     * Get the user's push subscriptions.
+     */
+    public function pushSubscriptions()
+    {
+        return $this->hasMany(\App\Models\PushSubscription::class);
+    }
+
+    /**
+     * Get the user's notification logs.
+     */
+    public function notificationLogs()
+    {
+        return $this->hasMany(\App\Models\NotificationLog::class);
+    }
+
+    /**
      * Check if user has a specific notification channel configured.
      */
     public function hasNotificationChannel($channel)

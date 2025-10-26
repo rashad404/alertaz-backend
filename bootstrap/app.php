@@ -20,13 +20,21 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         // Remove Sanctum middleware from API routes to fix CSRF issues
         // API routes are public and don't need stateful authentication
-        
+
         $middleware->alias([
             'cors' => \Illuminate\Http\Middleware\HandleCors::class,
             'admin' => \App\Http\Middleware\AdminMiddleware::class,
         ]);
-        
+
         $middleware->append(\Illuminate\Http\Middleware\HandleCors::class);
+
+        // Configure API authentication to return JSON instead of redirecting
+        $middleware->redirectGuestsTo(function ($request) {
+            if ($request->expectsJson() || $request->is('api/*')) {
+                return null; // Return null for API routes to avoid redirect
+            }
+            return route('login');
+        });
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //
