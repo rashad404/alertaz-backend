@@ -150,56 +150,12 @@ class WebsiteMonitor extends BaseMonitor
     }
 
     /**
-     * Format alert message specifically for websites.
+     * Format alert message - returns simple identifier for frontend translation.
      */
     protected function formatAlertMessage(PersonalAlert $alert, array $currentData): string
     {
-        $url = $alert->asset;
-        $condition = $alert->conditions;
-        $field = $condition['field'];
-
-        $message = "🌐 **Website Alert: {$alert->name}**\n\n";
-        $message .= "🔗 **{$url}**\n\n";
-
-        // Check what kind of alert it is
-        if ($field === 'is_online' || $field === 'is_up' || $field === 'is_down') {
-            $isOnline = $currentData['is_online'];
-
-            if ($isOnline) {
-                $message .= "✅ **Website is UP**\n\n";
-                $message .= "📊 **Status Details:**\n";
-                $message .= "• Status Code: {$currentData['status_code']}\n";
-                $message .= "• Response Time: {$currentData['response_time']} ms\n";
-            } else {
-                $message .= "🔴 **Website is DOWN**\n\n";
-                $message .= "⚠️ **Error Details:**\n";
-
-                if ($currentData['status_code'] > 0) {
-                    $message .= "• Status Code: {$currentData['status_code']}\n";
-                }
-
-                if ($currentData['error']) {
-                    $message .= "• Error: {$currentData['error']}\n";
-                }
-            }
-        } elseif ($field === 'response_time') {
-            $message .= "⏱️ **Response Time Alert**\n\n";
-            $message .= "• Condition: {$field} {$condition['operator']} {$condition['value']} ms\n";
-            $message .= "• Current Response Time: {$currentData['response_time']} ms\n";
-            $message .= "• Status Code: {$currentData['status_code']}\n";
-        } elseif ($field === 'status_code') {
-            $message .= "📊 **Status Code Alert**\n\n";
-            $message .= "• Expected: {$field} {$condition['operator']} {$condition['value']}\n";
-            $message .= "• Current Status Code: {$currentData['status_code']}\n";
-            $message .= "• Response Time: {$currentData['response_time']} ms\n";
-        }
-
-        if ($currentData['redirect_count'] > 0) {
-            $message .= "• Redirects: {$currentData['redirect_count']}\n";
-        }
-
-        $message .= "\n⏰ " . now()->format('Y-m-d H:i:s') . " (Asia/Baku)";
-
-        return $message;
+        // Return simple type identifier that frontend will translate
+        $isOnline = $currentData['is_online'] ?? false;
+        return $isOnline ? 'website_up' : 'website_down';
     }
 }

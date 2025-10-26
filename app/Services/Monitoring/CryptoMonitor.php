@@ -90,28 +90,11 @@ class CryptoMonitor extends BaseMonitor
 
 
     /**
-     * Format alert message specifically for crypto.
+     * Format alert message - returns simple identifier for frontend translation.
      */
     protected function formatAlertMessage(PersonalAlert $alert, array $currentData): string
     {
-        $symbol = $alert->asset;
-        $condition = $alert->conditions;
-        $currentPrice = $currentData['price'] ?? 0;
-        $change24h = $currentData['change_24h'] ?? 0;
-
-        $message = "🚨 **Crypto Alert: {$alert->name}**\n\n";
-        $message .= "💰 **{$symbol}** has reached your target!\n\n";
-        $message .= "📊 **Details:**\n";
-        $message .= "• Current Price: $" . number_format($currentPrice, 2) . "\n";
-        $message .= "• Your Target: {$condition['field']} {$condition['operator']} {$condition['value']}\n";
-        $message .= "• 24h Change: " . ($change24h >= 0 ? '+' : '') . number_format($change24h, 2) . "%\n";
-
-        if (isset($currentData['volume'])) {
-            $message .= "• 24h Volume: $" . number_format($currentData['volume'], 0) . "\n";
-        }
-
-        $message .= "\n⏰ " . now()->format('Y-m-d H:i:s') . " (Asia/Baku)";
-
-        return $message;
+        // Return simple type identifier that frontend will translate
+        return 'crypto_target_reached';
     }
 }

@@ -35,6 +35,16 @@ class PersonalAlert extends Model
         'last_checked_at' => 'datetime',
     ];
 
+    protected $appends = ['service_type'];
+
+    /**
+     * Get the service type from alert type relationship.
+     */
+    public function getServiceTypeAttribute()
+    {
+        return $this->alertType?->slug;
+    }
+
     /**
      * Get the user that owns the alert.
      */

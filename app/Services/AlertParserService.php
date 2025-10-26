@@ -136,6 +136,7 @@ User input: "{$input}"
 
 Available services:
 - crypto (cryptocurrencies like Bitcoin, Ethereum, etc.)
+- website (monitor website uptime like google.com, mysite.az)
 - stocks (NOT YET AVAILABLE)
 - currency (NOT YET AVAILABLE)
 - weather (NOT YET AVAILABLE)
@@ -145,7 +146,13 @@ For CRYPTO alerts, available operators:
 - below: price goes below threshold
 - equals: price equals threshold
 
+For WEBSITE alerts:
+- condition: "down" (alert when website is down) or "up" (alert when website is up)
+- url: the website URL to monitor (can be with or without http/https)
+
 Parse the input and return ONLY a JSON object with this structure:
+
+For CRYPTO:
 {
   "service": "crypto",
   "crypto_id": "bitcoin",
@@ -155,15 +162,35 @@ Parse the input and return ONLY a JSON object with this structure:
   "confidence": 0.95
 }
 
+For WEBSITE:
+{
+  "service": "website",
+  "url": "google.com",
+  "condition": "down",
+  "confidence": 0.9
+}
+
 Rules:
+For CRYPTO alerts:
 1. crypto_id must be lowercase full name (bitcoin, ethereum, solana, etc.)
 2. crypto_symbol must be uppercase ticker (BTC, ETH, SOL, etc.)
 3. operator must be one of: above, below, equals
 4. value must be a number (convert "100k" to 100000, "1m" to 1000000)
 5. confidence between 0.0 and 1.0 (how confident you are in the parse)
-6. Return ONLY the JSON, no explanation
+
+For WEBSITE alerts:
+1. url must be the website address (with or without http/https)
+2. condition must be either "down" (default) or "up"
+3. confidence between 0.0 and 1.0 (how confident you are in the parse)
+
+General:
+- Return ONLY the JSON, no explanation
+- If input mentions monitoring/watching/alerting a website, use service: "website"
+- If no specific condition mentioned for website, default to "down"
 
 Examples:
+
+CRYPTO Examples:
 Input: "Bitcoin $100k"
 Output: {"service": "crypto", "crypto_id": "bitcoin", "crypto_symbol": "BTC", "operator": "above", "value": 100000, "confidence": 0.95}
 
@@ -181,6 +208,31 @@ Output: {"service": "crypto", "crypto_id": "bitcoin", "crypto_symbol": "BTC", "o
 
 Input: "Solana below 100"
 Output: {"service": "crypto", "crypto_id": "solana", "crypto_symbol": "SOL", "operator": "below", "value": 100, "confidence": 0.9}
+
+WEBSITE Examples:
+Input: "monitor google.com"
+Output: {"service": "website", "url": "google.com", "condition": "down", "confidence": 0.9}
+
+Input: "alert me when mysite.az is down"
+Output: {"service": "website", "url": "mysite.az", "condition": "down", "confidence": 0.95}
+
+Input: "notify when facebook.com goes up"
+Output: {"service": "website", "url": "facebook.com", "condition": "up", "confidence": 0.9}
+
+Input: "watch https://example.com"
+Output: {"service": "website", "url": "example.com", "condition": "down", "confidence": 0.85}
+
+Input: "tell me when myapp.com comes back online"
+Output: {"service": "website", "url": "myapp.com", "condition": "up", "confidence": 0.9}
+
+Input: "sayt.az işləsə mənə xəbər ver" (Azerbaijani: alert me when sayt.az works)
+Output: {"service": "website", "url": "sayt.az", "condition": "up", "confidence": 0.9}
+
+Input: "example.com işləməyəndə bildiriş göndər" (Azerbaijani: send notification when example.com doesn't work)
+Output: {"service": "website", "url": "example.com", "condition": "down", "confidence": 0.9}
+
+Input: "monitor edin google.com" (Azerbaijani: monitor google.com)
+Output: {"service": "website", "url": "google.com", "condition": "down", "confidence": 0.85}
 
 Common crypto symbols to recognize:
 - BTC/Bitcoin → bitcoin
@@ -216,11 +268,30 @@ PROMPT;
             throw new \Exception('Invalid JSON in LLM response: ' . json_last_error_msg());
         }
 
-        // Validate required fields
-        $required = ['service', 'operator', 'value', 'confidence'];
-        foreach ($required as $field) {
+        // Validate required fields based on service type
+        $commonRequired = ['service', 'confidence'];
+
+        // Check common fields
+        foreach ($commonRequired as $field) {
             if (!isset($data[$field])) {
                 throw new \Exception("Missing required field: {$field}");
+            }
+        }
+
+        // Service-specific validation
+        if ($data['service'] === 'crypto') {
+            $cryptoRequired = ['operator', 'value'];
+            foreach ($cryptoRequired as $field) {
+                if (!isset($data[$field])) {
+                    throw new \Exception("Missing required field for crypto: {$field}");
+                }
+            }
+        } elseif ($data['service'] === 'website') {
+            $websiteRequired = ['url', 'condition'];
+            foreach ($websiteRequired as $field) {
+                if (!isset($data[$field])) {
+                    throw new \Exception("Missing required field for website: {$field}");
+                }
             }
         }
 
