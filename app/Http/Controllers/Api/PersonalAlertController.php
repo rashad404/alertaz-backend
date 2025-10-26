@@ -112,7 +112,6 @@ class PersonalAlertController extends Controller
             'conditions.value' => 'required',
             'notification_channels' => 'required|array|min:1',
             'notification_channels.*' => 'in:email,sms,telegram,whatsapp,slack,push',
-            'check_frequency' => 'integer|min:60|max:86400',
             'is_recurring' => 'boolean',
         ]);
 
@@ -137,6 +136,18 @@ class PersonalAlertController extends Controller
             ], 400);
         }
 
+        // Auto-assign check_frequency based on alert type
+        $checkFrequencyMap = [
+            1 => 10,   // Crypto - 10 seconds
+            2 => 300,  // Weather - 5 minutes
+            3 => 60,   // Website - 1 minute
+            4 => 30,   // Stocks - 30 seconds
+            5 => 60,   // Currency - 1 minute
+            6 => 300,  // Flight - 5 minutes
+        ];
+
+        $checkFrequency = $checkFrequencyMap[$request->alert_type_id] ?? 60;
+
         // Create the alert
         $alert = PersonalAlert::create([
             'user_id' => $user->id,
@@ -145,7 +156,7 @@ class PersonalAlertController extends Controller
             'asset' => $request->asset,
             'conditions' => $request->conditions,
             'notification_channels' => $request->notification_channels,
-            'check_frequency' => $request->check_frequency ?? 300,
+            'check_frequency' => $checkFrequency,
             'is_active' => true,
             'is_recurring' => $request->is_recurring ?? true,
         ]);
@@ -173,7 +184,6 @@ class PersonalAlertController extends Controller
             'conditions.operator' => 'in:equals,greater,greater_equal,less,less_equal,not_equals',
             'notification_channels' => 'array|min:1',
             'notification_channels.*' => 'in:email,sms,telegram,whatsapp,slack,push',
-            'check_frequency' => 'integer|min:60|max:86400',
             'is_active' => 'boolean',
             'is_recurring' => 'boolean',
         ]);
@@ -205,7 +215,6 @@ class PersonalAlertController extends Controller
             'name',
             'conditions',
             'notification_channels',
-            'check_frequency',
             'is_active',
             'is_recurring',
         ]));
@@ -226,7 +235,18 @@ class PersonalAlertController extends Controller
 
         $alert = PersonalAlert::where('user_id', $user->id)->findOrFail($id);
 
-        $alert->update(['is_active' => !$alert->is_active]);
+        $newStatus = !$alert->is_active;
+
+        // If reactivating a non-recurring alert that has already triggered, reset trigger count
+        if ($newStatus && !$alert->is_recurring && $alert->trigger_count > 0) {
+            $alert->update([
+                'is_active' => $newStatus,
+                'trigger_count' => 0,
+                'last_triggered_at' => null,
+            ]);
+        } else {
+            $alert->update(['is_active' => $newStatus]);
+        }
 
         return response()->json([
             'status' => 'success',

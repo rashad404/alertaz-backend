@@ -117,7 +117,8 @@ class User extends Authenticatable
             case 'slack':
                 return !empty($this->slack_webhook);
             case 'push':
-                return !empty($this->push_token);
+                // Check if user has any active push subscriptions
+                return $this->pushSubscriptions()->exists();
             default:
                 return false;
         }
