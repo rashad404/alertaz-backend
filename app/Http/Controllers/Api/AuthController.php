@@ -477,7 +477,7 @@ class AuthController extends Controller
         $validator = Validator::make($request->all(), [
             'name' => 'string|max:255',
             'email' => 'string|email|max:255|unique:users,email,' . $user->id,
-            'phone' => 'string|regex:/^\+994[0-9]{9}$/|unique:users,phone,' . $user->id,
+            'phone' => 'nullable|string|regex:/^\+994[0-9]{9}$/|unique:users,phone,' . $user->id,
             'telegram_chat_id' => 'string|nullable',
             'whatsapp_number' => 'string|nullable',
             'slack_webhook' => 'url|nullable',
@@ -514,6 +514,53 @@ class AuthController extends Controller
             'status' => 'success',
             'message' => 'Profile updated successfully',
             'data' => $user
+        ]);
+    }
+
+    /**
+     * Change user password.
+     */
+    public function changePassword(Request $request)
+    {
+        $user = $request->user();
+
+        $validator = Validator::make($request->all(), [
+            'current_password' => 'required|string',
+            'new_password' => 'required|string|min:6',
+            'new_password_confirmation' => 'required|string|same:new_password',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        // Check if user has a password (not OAuth user)
+        if (!$user->password) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Cannot change password for OAuth users'
+            ], 400);
+        }
+
+        // Verify current password
+        if (!Hash::check($request->current_password, $user->password)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Current password is incorrect'
+            ], 400);
+        }
+
+        // Update password
+        $user->password = Hash::make($request->new_password);
+        $user->save();
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Password changed successfully'
         ]);
     }
 

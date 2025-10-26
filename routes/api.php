@@ -42,6 +42,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // User Profile
     Route::get('/user', [AuthController::class, 'me']);
     Route::put('/user', [AuthController::class, 'updateProfile']);
+    Route::post('/user/change-password', [AuthController::class, 'changePassword']);
     Route::post('/auth/logout', [AuthController::class, 'logout']);
 
     // Alert Types
