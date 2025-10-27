@@ -44,8 +44,11 @@ class VerificationService
                 'email' => null,
                 'code' => $code,
                 'type' => 'sms',
+                'purpose' => 'login',
                 'expires_at' => now()->addMinutes(10),
-                'user_id' => $user?->id,
+                'attempts' => 0,
+                'ip_address' => request()->ip(),
+                'user_agent' => request()->userAgent(),
             ]);
 
             // In local mode, just log the code
@@ -103,8 +106,11 @@ class VerificationService
                 'email' => $email,
                 'code' => $code,
                 'type' => 'email',
+                'purpose' => 'verify',
                 'expires_at' => now()->addMinutes(15),
-                'user_id' => $user?->id,
+                'attempts' => 0,
+                'ip_address' => request()->ip(),
+                'user_agent' => request()->userAgent(),
             ]);
 
             // In local mode, just log the code

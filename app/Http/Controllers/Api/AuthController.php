@@ -7,6 +7,7 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Laravel\Socialite\Facades\Socialite;
 use Illuminate\Support\Str;
@@ -288,6 +289,13 @@ class AuthController extends Controller
         // Verify code using verification service
         $result = $this->verificationService->verifyCode($email, $code, 'email');
 
+        Log::info('Email verification attempt', [
+            'email' => $email,
+            'code' => $code,
+            'result' => $result,
+            'is_authenticated' => Auth::check()
+        ]);
+
         if (!$result['success']) {
             return response()->json([
                 'status' => 'error',
@@ -299,8 +307,25 @@ class AuthController extends Controller
         // Update user email verification status if logged in
         if (Auth::check()) {
             $user = Auth::user();
-            $user->update([
-                'email_verified_at' => now(),
+
+            Log::info('Updating user email verification', [
+                'user_id' => $user->id,
+                'email_before' => $user->email,
+                'email_verified_at_before' => $user->email_verified_at
+            ]);
+
+            $user->email_verified_at = now();
+            $user->save();
+
+            // Reload user to ensure we have fresh data including available channels
+            $user->refresh();
+            $user->available_notification_channels = $user->getAvailableNotificationChannels();
+
+            Log::info('User email verified', [
+                'user_id' => $user->id,
+                'email' => $user->email,
+                'email_verified_at' => $user->email_verified_at,
+                'available_channels' => $user->available_notification_channels
             ]);
 
             return response()->json([
@@ -495,6 +520,9 @@ class AuthController extends Controller
             ], 422);
         }
 
+        // Check if email is being changed
+        $emailChanged = $request->has('email') && $request->email !== $user->email;
+
         $user->update($request->only([
             'name',
             'email',
@@ -507,6 +535,12 @@ class AuthController extends Controller
             'timezone',
             'locale',
         ]));
+
+        // Clear email verification if email was changed
+        if ($emailChanged) {
+            $user->email_verified_at = null;
+            $user->save();
+        }
 
         $user->available_notification_channels = $user->getAvailableNotificationChannels();
 
