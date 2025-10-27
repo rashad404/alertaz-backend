@@ -19,7 +19,7 @@ return [
 
     'allowed_methods' => ['*'],
 
-    'allowed_origins' => ['*'],
+    'allowed_origins' => ['http://localhost:3007', 'http://localhost:4007', 'http://localhost:5174', 'http://localhost:5173', 'http://localhost:5175', 'http://100.89.150.50:3000', 'http://100.89.150.50:3007', 'http://100.89.150.50:4007', 'http://100.89.150.50:5174', 'https://www.kredit.az', 'https://alert.az', 'https://www.alert.az'],
 
     'allowed_origins_patterns' => [],
 
