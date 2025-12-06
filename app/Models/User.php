@@ -37,6 +37,8 @@ class User extends Authenticatable
         'locale',
         'is_admin',
         'role',
+        'balance',
+        'total_spent',
     ];
 
     /**
@@ -65,6 +67,8 @@ class User extends Authenticatable
             'password' => 'hashed',
             'is_admin' => 'boolean',
             'notification_preferences' => 'array',
+            'balance' => 'decimal:2',
+            'total_spent' => 'decimal:2',
         ];
     }
 
@@ -151,5 +155,50 @@ class User extends Authenticatable
         }
 
         return $channels;
+    }
+
+    /**
+     * Get the user's SMS messages.
+     */
+    public function smsMessages()
+    {
+        return $this->hasMany(SMSMessage::class);
+    }
+
+    /**
+     * Get the user's allowed senders.
+     */
+    public function allowedSenders()
+    {
+        return $this->hasMany(UserAllowedSender::class);
+    }
+
+    /**
+     * Add credits to user's balance.
+     */
+    public function addBalance(float $amount): void
+    {
+        $this->increment('balance', $amount);
+    }
+
+    /**
+     * Deduct amount from user's balance.
+     */
+    public function deductBalance(float $amount): bool
+    {
+        if ($this->balance < $amount) {
+            return false;
+        }
+        $this->decrement('balance', $amount);
+        $this->increment('total_spent', $amount);
+        return true;
+    }
+
+    /**
+     * Check if user has enough balance.
+     */
+    public function hasEnoughBalance(float $amount): bool
+    {
+        return $this->balance >= $amount;
     }
 }

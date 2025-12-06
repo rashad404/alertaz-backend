@@ -68,4 +68,10 @@ return [
         'base_url' => 'https://api.twelvedata.com',
     ],
 
+    'quicksms' => [
+        'login' => env('QUICKSMS_LOGIN'),
+        'password' => env('QUICKSMS_PASSWORD'),
+        'base_url' => env('QUICKSMS_BASE_URL', 'https://apps.lsim.az/quicksms/v1'),
+    ],
+
 ];

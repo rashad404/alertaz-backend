@@ -151,4 +151,18 @@ return [
         'store' => env('APP_MAINTENANCE_STORE', 'database'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | SMS API Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Cost per SMS message in AZN. This value can be easily changed.
+    | Default senders available for all users.
+    |
+    */
+
+    'sms_cost_per_message' => env('SMS_COST_PER_MESSAGE', 0.04),
+
+    'sms_default_senders' => ['Alert.az', 'Sayt.az', 'Task.az'],
+
 ];

@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\CryptoController;
 use App\Http\Controllers\Api\StockController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\AlertParseController;
+use App\Http\Controllers\Api\SMSAPIController;
 
 // Authentication Routes
 Route::prefix('auth')->group(function () {
@@ -78,11 +79,46 @@ Route::middleware('auth:sanctum')->group(function () {
         // Test notification
         Route::post('/test', [NotificationController::class, 'sendTestNotification']);
     });
+
+    // SMS API Routes
+    Route::prefix('sms')->group(function () {
+        Route::post('/send', [SMSAPIController::class, 'send']);
+        Route::get('/balance', [SMSAPIController::class, 'getBalance']);
+        Route::get('/history', [SMSAPIController::class, 'history']);
+        Route::get('/messages/{id}', [SMSAPIController::class, 'show']);
+    });
+
+    // Balance Management Routes
+    Route::post('/balance/add', function (Request $request) {
+        $user = $request->user();
+        $amount = $request->input('amount', 0);
+
+        if ($amount <= 0) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Amount must be greater than 0'
+            ], 400);
+        }
+
+        $user->addBalance($amount);
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Balance added successfully',
+            'data' => [
+                'balance' => (float) $user->fresh()->balance,
+                'amount_added' => (float) $amount
+            ]
+        ]);
+    });
 });
 
 // Public notification routes (no auth required)
 // VAPID public key needs to be accessible before user subscribes
 Route::get('/notifications/vapid-public-key', [NotificationController::class, 'getVapidPublicKey']);
+
+// SMS Webhook (public - for delivery reports from QuickSMS)
+Route::post('/webhooks/sms/delivery', [SMSAPIController::class, 'handleWebhook']);
 
 // Cryptocurrency Routes (public)
 Route::get('/cryptos', [CryptoController::class, 'getCryptoList']);
