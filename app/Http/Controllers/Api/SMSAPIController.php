@@ -68,7 +68,7 @@ class SMSAPIController extends Controller
                 'message' => 'Insufficient balance',
                 'code' => 'INSUFFICIENT_BALANCE',
                 'current_balance' => round((float) $user->balance, 2),
-                'required' => round((float) $cost, 2),
+                'required' =>123,
             ], 402);
         }
 
