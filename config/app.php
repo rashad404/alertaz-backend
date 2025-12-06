@@ -161,7 +161,7 @@ return [
     |
     */
 
-    'sms_cost_per_message' => env('SMS_COST_PER_MESSAGE', 0.04),
+    'sms_cost_per_message' => (float) env('SMS_COST_PER_MESSAGE', 0.04),
 
     'sms_default_senders' => ['Alert.az', 'Sayt.az', 'Task.az'],
 
