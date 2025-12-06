@@ -104,8 +104,8 @@ class SMSAPIController extends Controller
                     'transaction_id' => $result['transaction_id'],
                     'phone' => $phone,
                     'sender' => $senderToUse,
-                    'cost' => (float) $cost,
-                    'remaining_balance' => (float) $user->fresh()->balance,
+                    'cost' => number_format($cost, 2, '.', ''),
+                    'remaining_balance' => number_format($user->fresh()->balance, 2, '.', ''),
                 ],
             ], 200);
         }
