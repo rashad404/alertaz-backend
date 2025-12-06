@@ -67,8 +67,8 @@ class SMSAPIController extends Controller
                 'status' => 'error',
                 'message' => 'Insufficient balance',
                 'code' => 'INSUFFICIENT_BALANCE',
-                'current_balance' => (float) number_format($user->balance, 2, '.', ''),
-                'required' => (float) number_format($cost, 2, '.', ''),
+                'current_balance' => number_format($user->balance, 2, '.', ''),
+                'required' => number_format($cost, 2, '.', ''),
             ], 402);
         }
 
@@ -134,9 +134,9 @@ class SMSAPIController extends Controller
         return response()->json([
             'status' => 'success',
             'data' => [
-                'balance' => (float) $user->balance,
-                'total_spent' => (float) $user->total_spent,
-                'cost_per_sms' => (float) config('app.sms_cost_per_message', 0.04),
+                'balance' => number_format($user->balance, 2, '.', ''),
+                'total_spent' => number_format($user->total_spent, 2, '.', ''),
+                'cost_per_sms' => number_format(config('app.sms_cost_per_message', 0.04), 2, '.', ''),
             ],
         ], 200);
     }
