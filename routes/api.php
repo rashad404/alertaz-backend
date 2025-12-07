@@ -149,7 +149,11 @@ Route::middleware('auth.client')->group(function () {
     Route::post('/contacts/sync', [CampaignContactController::class, 'sync']);
     Route::post('/contacts/sync/bulk', [CampaignContactController::class, 'bulkSync']);
     Route::get('/contacts', [CampaignContactController::class, 'index']);
+    Route::post('/contacts', [CampaignContactController::class, 'store']);
+    Route::put('/contacts/{phone}', [CampaignContactController::class, 'update']);
     Route::delete('/contacts/{phone}', [CampaignContactController::class, 'destroy']);
+    Route::post('/contacts/bulk-delete', [CampaignContactController::class, 'bulkDestroy']);
+    Route::get('/contacts/export', [CampaignContactController::class, 'export']);
 
     // Segment Builder
     Route::get('/segments/attributes', [SegmentController::class, 'getAttributes']);
