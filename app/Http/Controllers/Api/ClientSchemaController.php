@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Client;
 use App\Models\ClientAttributeSchema;
+use App\Models\Contact;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -44,6 +45,10 @@ class ClientSchemaController extends Controller
         // Delete existing schemas for this client
         ClientAttributeSchema::where('client_id', $client->id)->delete();
 
+        // Clear attributes for all contacts of this client (force re-sync)
+        $contactsCleared = Contact::where('client_id', $client->id)->count();
+        Contact::where('client_id', $client->id)->update(['attributes' => []]);
+
         // Create new schemas
         $attributesCount = 0;
         foreach ($request->input('attributes') as $attribute) {
@@ -63,10 +68,11 @@ class ClientSchemaController extends Controller
 
         return response()->json([
             'status' => 'success',
-            'message' => 'Schema registered successfully',
+            'message' => 'Schema registered successfully. Contact attributes have been cleared.',
             'data' => [
                 'client_id' => $client->id,
                 'attributes_count' => $attributesCount,
+                'contacts_cleared' => $contactsCleared,
             ],
         ], 200);
     }
