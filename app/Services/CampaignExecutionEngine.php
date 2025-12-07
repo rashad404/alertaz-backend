@@ -3,7 +3,7 @@
 namespace App\Services;
 
 use App\Models\Campaign;
-use App\Models\CampaignMessage;
+use App\Models\SMSMessage;
 use App\Models\Contact;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
@@ -24,6 +24,16 @@ class CampaignExecutionEngine
     }
 
     /**
+     * Check if global test mode is enabled
+     *
+     * @return bool
+     */
+    protected function isGlobalTestMode(): bool
+    {
+        return config('services.quicksms.test_mode', false);
+    }
+
+    /**
      * Execute campaign (send SMS to all matching contacts)
      *
      * @param Campaign $campaign
@@ -32,6 +42,12 @@ class CampaignExecutionEngine
      */
     public function execute(Campaign $campaign, bool $mockMode = false): array
     {
+        // Check global test mode - overrides everything
+        $globalTestMode = $this->isGlobalTestMode();
+        if ($globalTestMode) {
+            $mockMode = true;
+        }
+
         // Validate campaign can be executed
         if (!in_array($campaign->status, ['draft', 'scheduled'])) {
             throw new \Exception('Campaign cannot be executed. Status: ' . $campaign->status);
@@ -111,8 +127,11 @@ class CampaignExecutionEngine
                         }
                     }
 
-                    // Create campaign message record
-                    CampaignMessage::create([
+                    // Create SMS message record
+                    SMSMessage::create([
+                        'user_id' => $campaign->created_by,
+                        'source' => 'campaign',
+                        'client_id' => $campaign->client_id,
                         'campaign_id' => $campaign->id,
                         'contact_id' => $contact->id,
                         'phone' => $contact->phone,
@@ -134,7 +153,10 @@ class CampaignExecutionEngine
                     $failedCount++;
 
                     // Create failed message record
-                    CampaignMessage::create([
+                    SMSMessage::create([
+                        'user_id' => $campaign->created_by,
+                        'source' => 'campaign',
+                        'client_id' => $campaign->client_id,
                         'campaign_id' => $campaign->id,
                         'contact_id' => $contact->id,
                         'phone' => $contact->phone,
@@ -163,6 +185,7 @@ class CampaignExecutionEngine
                 'failed_count' => $failedCount,
                 'total_cost' => $totalCost,
                 'mock_mode' => $mockMode,
+                'global_test_mode' => $globalTestMode,
             ];
 
         } catch (\Exception $e) {

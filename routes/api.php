@@ -175,6 +175,7 @@ Route::middleware('auth.client')->group(function () {
     Route::post('/campaigns/{id}/execute-test', [CampaignController::class, 'executeTest']);
     Route::get('/campaigns/{id}/preview', [CampaignController::class, 'preview']);
     Route::post('/campaigns/{id}/validate', [CampaignController::class, 'validate']);
+    Route::get('/campaigns/{id}/messages', [CampaignController::class, 'messages']);
 });
 
 // Cryptocurrency Routes (public)

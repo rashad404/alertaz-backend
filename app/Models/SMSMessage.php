@@ -11,6 +11,10 @@ class SMSMessage extends Model
 
     protected $fillable = [
         'user_id',
+        'source',
+        'client_id',
+        'campaign_id',
+        'contact_id',
         'phone',
         'message',
         'sender',
@@ -33,6 +37,21 @@ class SMSMessage extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function client(): BelongsTo
+    {
+        return $this->belongsTo(Client::class);
+    }
+
+    public function campaign(): BelongsTo
+    {
+        return $this->belongsTo(Campaign::class);
+    }
+
+    public function contact(): BelongsTo
+    {
+        return $this->belongsTo(Contact::class);
     }
 
     public function markAsSent(string $transactionId): void
@@ -70,5 +89,25 @@ class SMSMessage extends Model
     public function scopeRecent($query)
     {
         return $query->orderBy('created_at', 'desc');
+    }
+
+    public function scopeFromApi($query)
+    {
+        return $query->where('source', 'api');
+    }
+
+    public function scopeFromCampaign($query)
+    {
+        return $query->where('source', 'campaign');
+    }
+
+    public function scopeForCampaign($query, int $campaignId)
+    {
+        return $query->where('campaign_id', $campaignId);
+    }
+
+    public function scopeForClient($query, int $clientId)
+    {
+        return $query->where('client_id', $clientId);
     }
 }

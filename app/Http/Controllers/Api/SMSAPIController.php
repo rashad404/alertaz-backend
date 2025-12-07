@@ -142,7 +142,7 @@ class SMSAPIController extends Controller
     }
 
     /**
-     * Get SMS message history
+     * Get SMS message history with filters
      *
      * @param Request $request
      * @return JsonResponse
@@ -152,7 +152,43 @@ class SMSAPIController extends Controller
         $user = $request->user();
         $perPage = $request->input('per_page', 20);
 
-        $messages = SMSMessage::forUser($user->id)
+        $query = SMSMessage::forUser($user->id);
+
+        // Filter by source (api/campaign)
+        if ($source = $request->input('source')) {
+            $query->where('source', $source);
+        }
+
+        // Filter by campaign ID
+        if ($campaignId = $request->input('campaign_id')) {
+            $query->where('campaign_id', $campaignId);
+        }
+
+        // Filter by client/project ID
+        if ($clientId = $request->input('client_id')) {
+            $query->where('client_id', $clientId);
+        }
+
+        // Filter by phone (partial match)
+        if ($phone = $request->input('phone')) {
+            $query->where('phone', 'like', "%{$phone}%");
+        }
+
+        // Filter by status
+        if ($status = $request->input('status')) {
+            $query->where('status', $status);
+        }
+
+        // Filter by date range
+        if ($dateFrom = $request->input('date_from')) {
+            $query->whereDate('created_at', '>=', $dateFrom);
+        }
+        if ($dateTo = $request->input('date_to')) {
+            $query->whereDate('created_at', '<=', $dateTo);
+        }
+
+        $messages = $query
+            ->with(['campaign:id,name', 'client:id,name'])
             ->recent()
             ->paginate($perPage);
 

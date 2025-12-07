@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Campaign;
 use App\Models\SavedSegment;
+use App\Models\SMSMessage;
 use App\Models\UserSender;
 use App\Services\SegmentQueryBuilder;
 use App\Services\CampaignExecutionEngine;
@@ -417,8 +418,12 @@ class CampaignController extends Controller
             ], 404);
         }
 
-        // Validate campaign (skip balance check for test campaigns)
-        $errors = $this->executionEngine->validateCampaign($campaign, $campaign->is_test);
+        // Check if global test mode is enabled
+        $globalTestMode = config('services.quicksms.test_mode', false);
+        $isTestMode = $campaign->is_test || $globalTestMode;
+
+        // Validate campaign (skip balance check for test campaigns or global test mode)
+        $errors = $this->executionEngine->validateCampaign($campaign, $isTestMode);
         if (!empty($errors)) {
             return response()->json([
                 'status' => 'error',
@@ -427,13 +432,21 @@ class CampaignController extends Controller
             ], 422);
         }
 
-        // Execute campaign (use test mode if is_test flag is set)
-        $result = $this->executionEngine->execute($campaign, $campaign->is_test);
+        // Execute campaign (use test mode if is_test flag is set or global test mode)
+        $result = $this->executionEngine->execute($campaign, $isTestMode);
+
+        // Build appropriate message based on test mode
+        $message = 'Campaign executed successfully';
+        if ($result['global_test_mode'] ?? false) {
+            $message = 'Campaign executed in TEST MODE (global). No SMS was actually sent.';
+        } elseif ($result['mock_mode'] ?? false) {
+            $message = 'Campaign executed in TEST MODE. No SMS was actually sent.';
+        }
 
         if ($result['success']) {
             return response()->json([
                 'status' => 'success',
-                'message' => 'Campaign executed successfully',
+                'message' => $message,
                 'data' => $result,
             ], 200);
         } else {
@@ -547,5 +560,47 @@ class CampaignController extends Controller
                 'errors' => $errors,
             ], 422);
         }
+    }
+
+    /**
+     * Get campaign message history
+     *
+     * @param Request $request
+     * @param int $id
+     * @return JsonResponse
+     */
+    public function messages(Request $request, int $id): JsonResponse
+    {
+        $client = $request->attributes->get('client');
+        $perPage = $request->input('per_page', 20);
+
+        $campaign = Campaign::where('client_id', $client->id)
+            ->where('id', $id)
+            ->first();
+
+        if (!$campaign) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Campaign not found',
+            ], 404);
+        }
+
+        $messages = SMSMessage::where('campaign_id', $id)
+            ->with('contact:id,phone,attributes')
+            ->orderBy('created_at', 'desc')
+            ->paginate($perPage);
+
+        return response()->json([
+            'status' => 'success',
+            'data' => [
+                'messages' => $messages->items(),
+                'pagination' => [
+                    'current_page' => $messages->currentPage(),
+                    'last_page' => $messages->lastPage(),
+                    'per_page' => $messages->perPage(),
+                    'total' => $messages->total(),
+                ],
+            ],
+        ], 200);
     }
 }
