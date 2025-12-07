@@ -10,6 +10,12 @@ use App\Http\Controllers\Api\StockController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\AlertParseController;
 use App\Http\Controllers\Api\SMSAPIController;
+use App\Http\Controllers\Api\ClientSchemaController;
+use App\Http\Controllers\Api\CampaignContactController;
+use App\Http\Controllers\Api\SegmentController;
+use App\Http\Controllers\Api\SavedSegmentController;
+use App\Http\Controllers\Api\CampaignController;
+use App\Http\Controllers\Api\UserClientController;
 
 // Authentication Routes
 Route::prefix('auth')->group(function () {
@@ -88,6 +94,16 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/messages/{id}', [SMSAPIController::class, 'show']);
     });
 
+    // User Project Management (SMS Campaign Projects)
+    Route::prefix('projects')->group(function () {
+        Route::get('/', [UserClientController::class, 'index']);
+        Route::post('/', [UserClientController::class, 'store']);
+        Route::get('/{id}', [UserClientController::class, 'show']);
+        Route::put('/{id}', [UserClientController::class, 'update']);
+        Route::delete('/{id}', [UserClientController::class, 'destroy']);
+        Route::post('/{id}/regenerate-token', [UserClientController::class, 'regenerateToken']);
+    });
+
     // Balance Management Routes
     Route::post('/balance/add', function (Request $request) {
         $user = $request->user();
@@ -119,6 +135,47 @@ Route::get('/notifications/vapid-public-key', [NotificationController::class, 'g
 
 // SMS Webhook (public - for delivery reports from QuickSMS)
 Route::post('/webhooks/sms/delivery', [SMSAPIController::class, 'handleWebhook']);
+
+// Campaign Management API (Client Token Authentication)
+Route::middleware('auth.client')->group(function () {
+    // Available Senders for the user
+    Route::get('/senders', [CampaignController::class, 'getSenders']);
+
+    // Schema Management
+    Route::post('/clients/schema', [ClientSchemaController::class, 'register']);
+    Route::get('/clients/schema', [ClientSchemaController::class, 'get']);
+
+    // Contact Management
+    Route::post('/contacts/sync', [CampaignContactController::class, 'sync']);
+    Route::post('/contacts/sync/bulk', [CampaignContactController::class, 'bulkSync']);
+    Route::get('/contacts', [CampaignContactController::class, 'index']);
+    Route::delete('/contacts/{phone}', [CampaignContactController::class, 'destroy']);
+
+    // Segment Builder
+    Route::get('/segments/attributes', [SegmentController::class, 'getAttributes']);
+    Route::post('/segments/preview', [SegmentController::class, 'preview']);
+    Route::post('/segments/validate', [SegmentController::class, 'validate']);
+
+    // Saved Segments
+    Route::get('/saved-segments', [SavedSegmentController::class, 'index']);
+    Route::post('/saved-segments', [SavedSegmentController::class, 'store']);
+    Route::get('/saved-segments/{id}', [SavedSegmentController::class, 'show']);
+    Route::put('/saved-segments/{id}', [SavedSegmentController::class, 'update']);
+    Route::delete('/saved-segments/{id}', [SavedSegmentController::class, 'destroy']);
+
+    // Campaigns
+    Route::get('/campaigns', [CampaignController::class, 'index']);
+    Route::post('/campaigns', [CampaignController::class, 'store']);
+    Route::get('/campaigns/{id}', [CampaignController::class, 'show']);
+    Route::put('/campaigns/{id}', [CampaignController::class, 'update']);
+    Route::delete('/campaigns/{id}', [CampaignController::class, 'destroy']);
+    Route::post('/campaigns/{id}/cancel', [CampaignController::class, 'cancel']);
+    Route::get('/campaigns/{id}/stats', [CampaignController::class, 'stats']);
+    Route::post('/campaigns/{id}/execute', [CampaignController::class, 'execute']);
+    Route::post('/campaigns/{id}/execute-test', [CampaignController::class, 'executeTest']);
+    Route::get('/campaigns/{id}/preview', [CampaignController::class, 'preview']);
+    Route::post('/campaigns/{id}/validate', [CampaignController::class, 'validate']);
+});
 
 // Cryptocurrency Routes (public)
 Route::get('/cryptos', [CryptoController::class, 'getCryptoList']);

@@ -1,0 +1,386 @@
+<?php
+
+namespace App\Services;
+
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
+
+class SegmentQueryBuilder
+{
+    /**
+     * Apply segment filters to query
+     *
+     * @param Builder $query
+     * @param array $filter
+     * @return Builder
+     */
+    public function applyFilters(Builder $query, array $filter): Builder
+    {
+        if (empty($filter['conditions'])) {
+            return $query;
+        }
+
+        $logic = $filter['logic'] ?? 'AND';
+        $conditions = $filter['conditions'];
+
+        if ($logic === 'AND') {
+            foreach ($conditions as $condition) {
+                $this->applyCondition($query, $condition);
+            }
+        } else {
+            // OR logic
+            $query->where(function ($q) use ($conditions) {
+                foreach ($conditions as $condition) {
+                    $this->applyCondition($q, $condition, 'or');
+                }
+            });
+        }
+
+        return $query;
+    }
+
+    /**
+     * Apply single condition to query
+     *
+     * @param Builder $query
+     * @param array $condition
+     * @param string $boolean
+     * @return void
+     */
+    protected function applyCondition(Builder $query, array $condition, string $boolean = 'and'): void
+    {
+        $key = $condition['key'];
+        $operator = $condition['operator'];
+        $value = $condition['value'] ?? null;
+
+        // JSON path for attributes
+        $jsonPath = "attributes->{$key}";
+
+        match ($operator) {
+            // String conditions
+            'equals' => $this->applyEquals($query, $jsonPath, $value, $boolean),
+            'not_equals' => $this->applyNotEquals($query, $jsonPath, $value, $boolean),
+            'contains' => $this->applyContains($query, $jsonPath, $value, $boolean),
+            'not_contains' => $this->applyNotContains($query, $jsonPath, $value, $boolean),
+            'starts_with' => $this->applyStartsWith($query, $jsonPath, $value, $boolean),
+            'ends_with' => $this->applyEndsWith($query, $jsonPath, $value, $boolean),
+            'is_set' => $this->applyIsSet($query, $jsonPath, $boolean),
+            'is_not_set' => $this->applyIsNotSet($query, $jsonPath, $boolean),
+
+            // Number conditions
+            'greater_than' => $this->applyGreaterThan($query, $jsonPath, $value, $boolean),
+            'less_than' => $this->applyLessThan($query, $jsonPath, $value, $boolean),
+            'greater_than_or_equal' => $this->applyGreaterThanOrEqual($query, $jsonPath, $value, $boolean),
+            'less_than_or_equal' => $this->applyLessThanOrEqual($query, $jsonPath, $value, $boolean),
+            'between' => $this->applyBetween($query, $jsonPath, $value, $boolean),
+
+            // Date conditions
+            'expires_within' => $this->applyExpiresWithin($query, $jsonPath, $value, $boolean),
+            'expired_since' => $this->applyExpiredSince($query, $jsonPath, $value, $boolean),
+            'equals_date' => $this->applyEqualsDate($query, $jsonPath, $value, $boolean),
+            'before' => $this->applyBefore($query, $jsonPath, $value, $boolean),
+            'after' => $this->applyAfter($query, $jsonPath, $value, $boolean),
+
+            // Boolean conditions
+            'is_true' => $this->applyIsTrue($query, $jsonPath, $boolean),
+            'is_false' => $this->applyIsFalse($query, $jsonPath, $boolean),
+
+            // Enum conditions
+            'in' => $this->applyIn($query, $jsonPath, $value, $boolean),
+            'not_in' => $this->applyNotIn($query, $jsonPath, $value, $boolean),
+
+            // Array conditions
+            'count' => $this->applyArrayCount($query, $jsonPath, $value, $boolean),
+            'any' => $this->applyArrayAny($query, $jsonPath, $value, $boolean),
+            'all' => $this->applyArrayAll($query, $jsonPath, $value, $boolean),
+            'none' => $this->applyArrayNone($query, $jsonPath, $value, $boolean),
+            'exists' => $this->applyArrayExists($query, $jsonPath, $value, $boolean),
+            'is_empty' => $this->applyArrayIsEmpty($query, $jsonPath, $boolean),
+
+            default => null
+        };
+    }
+
+    // ==================== String Conditions ====================
+
+    protected function applyEquals(Builder $query, string $jsonPath, $value, string $boolean): void
+    {
+        $query->where(DB::raw("JSON_UNQUOTE(JSON_EXTRACT(`attributes`, '$.{$this->extractKey($jsonPath)}'))"), '=', $value, $boolean);
+    }
+
+    protected function applyNotEquals(Builder $query, string $jsonPath, $value, string $boolean): void
+    {
+        $query->where(DB::raw("JSON_UNQUOTE(JSON_EXTRACT(`attributes`, '$.{$this->extractKey($jsonPath)}'))"), '!=', $value, $boolean);
+    }
+
+    protected function applyContains(Builder $query, string $jsonPath, $value, string $boolean): void
+    {
+        $query->where(DB::raw("JSON_UNQUOTE(JSON_EXTRACT(`attributes`, '$.{$this->extractKey($jsonPath)}'))"), 'LIKE', "%{$value}%", $boolean);
+    }
+
+    protected function applyNotContains(Builder $query, string $jsonPath, $value, string $boolean): void
+    {
+        $query->where(DB::raw("JSON_UNQUOTE(JSON_EXTRACT(`attributes`, '$.{$this->extractKey($jsonPath)}'))"), 'NOT LIKE', "%{$value}%", $boolean);
+    }
+
+    protected function applyStartsWith(Builder $query, string $jsonPath, $value, string $boolean): void
+    {
+        $query->where(DB::raw("JSON_UNQUOTE(JSON_EXTRACT(`attributes`, '$.{$this->extractKey($jsonPath)}'))"), 'LIKE', "{$value}%", $boolean);
+    }
+
+    protected function applyEndsWith(Builder $query, string $jsonPath, $value, string $boolean): void
+    {
+        $query->where(DB::raw("JSON_UNQUOTE(JSON_EXTRACT(`attributes`, '$.{$this->extractKey($jsonPath)}'))"), 'LIKE', "%{$value}", $boolean);
+    }
+
+    protected function applyIsSet(Builder $query, string $jsonPath, string $boolean): void
+    {
+        $query->whereNotNull(DB::raw("JSON_EXTRACT(`attributes`, '$.{$this->extractKey($jsonPath)}')"), $boolean);
+    }
+
+    protected function applyIsNotSet(Builder $query, string $jsonPath, string $boolean): void
+    {
+        $query->whereNull(DB::raw("JSON_EXTRACT(`attributes`, '$.{$this->extractKey($jsonPath)}')"), $boolean);
+    }
+
+    // ==================== Number Conditions ====================
+
+    protected function applyGreaterThan(Builder $query, string $jsonPath, $value, string $boolean): void
+    {
+        $query->whereRaw("CAST(JSON_UNQUOTE(JSON_EXTRACT(`attributes`, '$.{$this->extractKey($jsonPath)}')) AS DECIMAL(20,2)) > ?", [$value], $boolean);
+    }
+
+    protected function applyLessThan(Builder $query, string $jsonPath, $value, string $boolean): void
+    {
+        $query->whereRaw("CAST(JSON_UNQUOTE(JSON_EXTRACT(`attributes`, '$.{$this->extractKey($jsonPath)}')) AS DECIMAL(20,2)) < ?", [$value], $boolean);
+    }
+
+    protected function applyGreaterThanOrEqual(Builder $query, string $jsonPath, $value, string $boolean): void
+    {
+        $query->whereRaw("CAST(JSON_UNQUOTE(JSON_EXTRACT(`attributes`, '$.{$this->extractKey($jsonPath)}')) AS DECIMAL(20,2)) >= ?", [$value], $boolean);
+    }
+
+    protected function applyLessThanOrEqual(Builder $query, string $jsonPath, $value, string $boolean): void
+    {
+        $query->whereRaw("CAST(JSON_UNQUOTE(JSON_EXTRACT(`attributes`, '$.{$this->extractKey($jsonPath)}')) AS DECIMAL(20,2)) <= ?", [$value], $boolean);
+    }
+
+    protected function applyBetween(Builder $query, string $jsonPath, $value, string $boolean): void
+    {
+        $query->whereRaw(
+            "CAST(JSON_UNQUOTE(JSON_EXTRACT(`attributes`, '$.{$this->extractKey($jsonPath)}')) AS DECIMAL(20,2)) BETWEEN ? AND ?",
+            [$value['min'], $value['max']],
+            $boolean
+        );
+    }
+
+    // ==================== Date Conditions ====================
+
+    protected function applyExpiresWithin(Builder $query, string $jsonPath, $value, string $boolean): void
+    {
+        $days = $value['days'];
+        $targetDate = now()->addDays($days)->format('Y-m-d');
+
+        $query->whereRaw(
+            "JSON_UNQUOTE(JSON_EXTRACT(`attributes`, '$.{$this->extractKey($jsonPath)}')) BETWEEN CURDATE() AND ?",
+            [$targetDate],
+            $boolean
+        );
+    }
+
+    protected function applyExpiredSince(Builder $query, string $jsonPath, $value, string $boolean): void
+    {
+        $days = $value['days'];
+        $targetDate = now()->subDays($days)->format('Y-m-d');
+
+        $query->whereRaw(
+            "JSON_UNQUOTE(JSON_EXTRACT(`attributes`, '$.{$this->extractKey($jsonPath)}')) BETWEEN ? AND CURDATE()",
+            [$targetDate],
+            $boolean
+        );
+    }
+
+    protected function applyEqualsDate(Builder $query, string $jsonPath, $value, string $boolean): void
+    {
+        $query->whereRaw(
+            "DATE(JSON_UNQUOTE(JSON_EXTRACT(`attributes`, '$.{$this->extractKey($jsonPath)}'))) = ?",
+            [$value],
+            $boolean
+        );
+    }
+
+    protected function applyBefore(Builder $query, string $jsonPath, $value, string $boolean): void
+    {
+        $query->whereRaw(
+            "JSON_UNQUOTE(JSON_EXTRACT(`attributes`, '$.{$this->extractKey($jsonPath)}')) < ?",
+            [$value],
+            $boolean
+        );
+    }
+
+    protected function applyAfter(Builder $query, string $jsonPath, $value, string $boolean): void
+    {
+        $query->whereRaw(
+            "JSON_UNQUOTE(JSON_EXTRACT(`attributes`, '$.{$this->extractKey($jsonPath)}')) > ?",
+            [$value],
+            $boolean
+        );
+    }
+
+    // ==================== Boolean Conditions ====================
+
+    protected function applyIsTrue(Builder $query, string $jsonPath, string $boolean): void
+    {
+        $query->whereRaw(
+            "JSON_EXTRACT(`attributes`, '$.{$this->extractKey($jsonPath)}') = true",
+            [],
+            $boolean
+        );
+    }
+
+    protected function applyIsFalse(Builder $query, string $jsonPath, string $boolean): void
+    {
+        $query->whereRaw(
+            "JSON_EXTRACT(`attributes`, '$.{$this->extractKey($jsonPath)}') = false",
+            [],
+            $boolean
+        );
+    }
+
+    // ==================== Enum Conditions ====================
+
+    protected function applyIn(Builder $query, string $jsonPath, $value, string $boolean): void
+    {
+        $placeholders = implode(',', array_fill(0, count($value), '?'));
+        $query->whereRaw(
+            "JSON_UNQUOTE(JSON_EXTRACT(`attributes`, '$.{$this->extractKey($jsonPath)}')) IN ({$placeholders})",
+            $value,
+            $boolean
+        );
+    }
+
+    protected function applyNotIn(Builder $query, string $jsonPath, $value, string $boolean): void
+    {
+        $placeholders = implode(',', array_fill(0, count($value), '?'));
+        $query->whereRaw(
+            "JSON_UNQUOTE(JSON_EXTRACT(`attributes`, '$.{$this->extractKey($jsonPath)}')) NOT IN ({$placeholders})",
+            $value,
+            $boolean
+        );
+    }
+
+    // ==================== Array Conditions ====================
+
+    protected function applyArrayCount(Builder $query, string $jsonPath, $value, string $boolean): void
+    {
+        $operator = $value['operator']; // equals, greater_than, less_than
+        $count = $value['count'];
+
+        $sqlOperator = match ($operator) {
+            'equals' => '=',
+            'greater_than' => '>',
+            'less_than' => '<',
+            'greater_than_or_equal' => '>=',
+            'less_than_or_equal' => '<=',
+            default => '='
+        };
+
+        $query->whereRaw(
+            "JSON_LENGTH(JSON_EXTRACT(`attributes`, '$.{$this->extractKey($jsonPath)}')) {$sqlOperator} ?",
+            [$count],
+            $boolean
+        );
+    }
+
+    protected function applyArrayAny(Builder $query, string $jsonPath, $value, string $boolean): void
+    {
+        // Check if any element in array matches the value
+        $query->whereRaw(
+            "JSON_CONTAINS(JSON_EXTRACT(`attributes`, '$.{$this->extractKey($jsonPath)}'), ?)",
+            [json_encode($value)],
+            $boolean
+        );
+    }
+
+    protected function applyArrayAll(Builder $query, string $jsonPath, $value, string $boolean): void
+    {
+        // Check if all values exist in the array
+        foreach ($value as $item) {
+            $query->whereRaw(
+                "JSON_CONTAINS(JSON_EXTRACT(`attributes`, '$.{$this->extractKey($jsonPath)}'), ?)",
+                [json_encode($item)],
+                $boolean
+            );
+        }
+    }
+
+    protected function applyArrayNone(Builder $query, string $jsonPath, $value, string $boolean): void
+    {
+        // Check that none of the values exist in the array
+        foreach ($value as $item) {
+            $query->whereRaw(
+                "NOT JSON_CONTAINS(JSON_EXTRACT(`attributes`, '$.{$this->extractKey($jsonPath)}'), ?)",
+                [json_encode($item)],
+                $boolean
+            );
+        }
+    }
+
+    protected function applyArrayExists(Builder $query, string $jsonPath, $value, string $boolean): void
+    {
+        // Check if specific value exists in array (alias for 'any')
+        $this->applyArrayAny($query, $jsonPath, $value, $boolean);
+    }
+
+    protected function applyArrayIsEmpty(Builder $query, string $jsonPath, string $boolean): void
+    {
+        $query->whereRaw(
+            "JSON_LENGTH(JSON_EXTRACT(`attributes`, '$.{$this->extractKey($jsonPath)}')) = 0 OR JSON_EXTRACT(`attributes`, '$.{$this->extractKey($jsonPath)}') IS NULL",
+            [],
+            $boolean
+        );
+    }
+
+    // ==================== Helper Methods ====================
+
+    /**
+     * Extract key from JSON path
+     *
+     * @param string $jsonPath
+     * @return string
+     */
+    protected function extractKey(string $jsonPath): string
+    {
+        // Extract key from "attributes->key" format
+        return str_replace('attributes->', '', $jsonPath);
+    }
+
+    /**
+     * Count contacts matching the filter
+     *
+     * @param int $clientId
+     * @param array $filter
+     * @return int
+     */
+    public function countMatches(int $clientId, array $filter): int
+    {
+        $query = \App\Models\Contact::where('client_id', $clientId);
+        $this->applyFilters($query, $filter);
+        return $query->count();
+    }
+
+    /**
+     * Get contacts matching the filter
+     *
+     * @param int $clientId
+     * @param array $filter
+     * @param int $limit
+     * @return \Illuminate\Support\Collection
+     */
+    public function getMatches(int $clientId, array $filter, int $limit = 100): \Illuminate\Support\Collection
+    {
+        $query = \App\Models\Contact::where('client_id', $clientId);
+        $this->applyFilters($query, $filter);
+        return $query->limit($limit)->get();
+    }
+}
