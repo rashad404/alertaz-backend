@@ -563,6 +563,54 @@ class CampaignController extends Controller
     }
 
     /**
+     * Duplicate campaign (create a copy as draft)
+     *
+     * @param Request $request
+     * @param int $id
+     * @return JsonResponse
+     */
+    public function duplicate(Request $request, int $id): JsonResponse
+    {
+        $client = $request->attributes->get('client');
+
+        $campaign = Campaign::where('client_id', $client->id)
+            ->where('id', $id)
+            ->first();
+
+        if (!$campaign) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Campaign not found',
+            ], 404);
+        }
+
+        // Recalculate target count (contacts may have changed)
+        $targetCount = $this->queryBuilder->countMatches($client->id, $campaign->segment_filter);
+
+        // Create a copy as draft
+        $newCampaign = Campaign::create([
+            'client_id' => $client->id,
+            'name' => $campaign->name . ' (copy)',
+            'sender' => $campaign->sender,
+            'message_template' => $campaign->message_template,
+            'status' => 'draft',
+            'segment_filter' => $campaign->segment_filter,
+            'scheduled_at' => null,
+            'target_count' => $targetCount,
+            'created_by' => $client->user_id,
+            'is_test' => $campaign->is_test,
+        ]);
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Campaign duplicated successfully',
+            'data' => [
+                'campaign' => $newCampaign,
+            ],
+        ], 201);
+    }
+
+    /**
      * Get campaign message history
      *
      * @param Request $request

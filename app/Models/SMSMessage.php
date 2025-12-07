@@ -20,6 +20,7 @@ class SMSMessage extends Model
         'sender',
         'cost',
         'status',
+        'is_test',
         'provider_transaction_id',
         'delivery_status_code',
         'error_message',
@@ -30,6 +31,7 @@ class SMSMessage extends Model
 
     protected $casts = [
         'cost' => 'decimal:2',
+        'is_test' => 'boolean',
         'sent_at' => 'datetime',
         'delivered_at' => 'datetime',
     ];

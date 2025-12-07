@@ -139,6 +139,7 @@ class CampaignExecutionEngine
                         'sender' => $campaign->sender,
                         'cost' => $cost,
                         'status' => $messageStatus,
+                        'is_test' => $mockMode,
                         'provider_transaction_id' => $externalId,
                         'sent_at' => $messageStatus === 'sent' ? now() : null,
                         'delivered_at' => $deliveryStatus === 'delivered' ? now() : null,
@@ -164,6 +165,7 @@ class CampaignExecutionEngine
                         'sender' => $campaign->sender,
                         'cost' => 0,
                         'status' => 'failed',
+                        'is_test' => $mockMode,
                         'error_message' => $e->getMessage(),
                     ]);
                 }

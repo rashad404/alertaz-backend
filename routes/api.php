@@ -180,6 +180,7 @@ Route::middleware('auth.client')->group(function () {
     Route::get('/campaigns/{id}/preview', [CampaignController::class, 'preview']);
     Route::post('/campaigns/{id}/validate', [CampaignController::class, 'validate']);
     Route::get('/campaigns/{id}/messages', [CampaignController::class, 'messages']);
+    Route::post('/campaigns/{id}/duplicate', [CampaignController::class, 'duplicate']);
 });
 
 // Cryptocurrency Routes (public)
