@@ -45,8 +45,9 @@ class ClientAttributeSchema extends Model
                 'greater_than_or_equal', 'less_than_or_equal', 'between'
             ],
             'date' => [
-                'expires_within', 'expired_since', 'equals_date',
-                'before', 'after', 'between', 'is_set', 'is_not_set'
+                'expires_in_days_eq', 'expires_in_days_gt', 'expires_in_days_gte',
+                'expires_in_days_lt', 'expires_in_days_lte',
+                'equals_date', 'before', 'after', 'is_set', 'is_not_set'
             ],
             'boolean' => [
                 'is_true', 'is_false', 'is_set', 'is_not_set'

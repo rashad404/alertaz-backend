@@ -56,6 +56,13 @@ class SegmentQueryBuilder
         // JSON path for attributes
         $jsonPath = "attributes->{$key}";
 
+        // For most operators (except is_not_set), ensure the attribute exists
+        // This makes filtering by hosting_expiry only return contacts with hosting
+        $operatorsWithoutExistCheck = ['is_not_set', 'is_empty'];
+        if (!in_array($operator, $operatorsWithoutExistCheck)) {
+            $query->whereNotNull(DB::raw("JSON_EXTRACT(`attributes`, '$.{$key}')"), $boolean);
+        }
+
         match ($operator) {
             // String conditions
             'equals' => $this->applyEquals($query, $jsonPath, $value, $boolean),
@@ -74,7 +81,14 @@ class SegmentQueryBuilder
             'less_than_or_equal' => $this->applyLessThanOrEqual($query, $jsonPath, $value, $boolean),
             'between' => $this->applyBetween($query, $jsonPath, $value, $boolean),
 
-            // Date conditions
+            // Date conditions (days from now)
+            'expires_in_days_eq' => $this->applyExpiresInDays($query, $jsonPath, $value, '=', $boolean),
+            'expires_in_days_gt' => $this->applyExpiresInDays($query, $jsonPath, $value, '>', $boolean),
+            'expires_in_days_gte' => $this->applyExpiresInDays($query, $jsonPath, $value, '>=', $boolean),
+            'expires_in_days_lt' => $this->applyExpiresInDays($query, $jsonPath, $value, '<', $boolean),
+            'expires_in_days_lte' => $this->applyExpiresInDays($query, $jsonPath, $value, '<=', $boolean),
+
+            // Legacy date conditions
             'expires_within' => $this->applyExpiresWithin($query, $jsonPath, $value, $boolean),
             'expired_since' => $this->applyExpiredSince($query, $jsonPath, $value, $boolean),
             'equals_date' => $this->applyEqualsDate($query, $jsonPath, $value, $boolean),
@@ -167,6 +181,10 @@ class SegmentQueryBuilder
 
     protected function applyBetween(Builder $query, string $jsonPath, $value, string $boolean): void
     {
+        if (!is_array($value) || !isset($value['min']) || !isset($value['max'])) {
+            return;
+        }
+
         $query->whereRaw(
             "CAST(JSON_UNQUOTE(JSON_EXTRACT(`attributes`, '$.{$this->extractKey($jsonPath)}')) AS DECIMAL(20,2)) BETWEEN ? AND ?",
             [$value['min'], $value['max']],
@@ -176,9 +194,46 @@ class SegmentQueryBuilder
 
     // ==================== Date Conditions ====================
 
+    /**
+     * Apply date comparison based on days from now
+     * Compares the date attribute to (today + X days)
+     */
+    protected function applyExpiresInDays(Builder $query, string $jsonPath, $value, string $operator, string $boolean): void
+    {
+        // Handle both formats: {"days": 3} or just the number 3
+        if (is_array($value) && isset($value['days'])) {
+            $days = (int) $value['days'];
+        } elseif (is_numeric($value)) {
+            $days = (int) $value;
+        } else {
+            return;
+        }
+
+        $targetDate = now()->addDays($days)->format('Y-m-d');
+
+        $query->whereRaw(
+            "DATE(JSON_UNQUOTE(JSON_EXTRACT(`attributes`, '$.{$this->extractKey($jsonPath)}'))) {$operator} ?",
+            [$targetDate],
+            $boolean
+        );
+    }
+
     protected function applyExpiresWithin(Builder $query, string $jsonPath, $value, string $boolean): void
     {
-        $days = $value['days'];
+        // Handle both formats: {"days": 3} or just the number 3
+        if (is_array($value) && isset($value['days'])) {
+            $days = (int) $value['days'];
+        } elseif (is_numeric($value)) {
+            $days = (int) $value;
+        } else {
+            // Invalid value, skip this condition
+            return;
+        }
+
+        if ($days <= 0) {
+            return;
+        }
+
         $targetDate = now()->addDays($days)->format('Y-m-d');
 
         $query->whereRaw(
@@ -190,7 +245,20 @@ class SegmentQueryBuilder
 
     protected function applyExpiredSince(Builder $query, string $jsonPath, $value, string $boolean): void
     {
-        $days = $value['days'];
+        // Handle both formats: {"days": 3} or just the number 3
+        if (is_array($value) && isset($value['days'])) {
+            $days = (int) $value['days'];
+        } elseif (is_numeric($value)) {
+            $days = (int) $value;
+        } else {
+            // Invalid value, skip this condition
+            return;
+        }
+
+        if ($days <= 0) {
+            return;
+        }
+
         $targetDate = now()->subDays($days)->format('Y-m-d');
 
         $query->whereRaw(
@@ -273,6 +341,10 @@ class SegmentQueryBuilder
 
     protected function applyArrayCount(Builder $query, string $jsonPath, $value, string $boolean): void
     {
+        if (!is_array($value) || !isset($value['operator']) || !isset($value['count'])) {
+            return;
+        }
+
         $operator = $value['operator']; // equals, greater_than, less_than
         $count = $value['count'];
 
