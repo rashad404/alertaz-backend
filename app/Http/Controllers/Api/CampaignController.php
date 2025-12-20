@@ -133,6 +133,11 @@ class CampaignController extends Controller
             'segment_filter.conditions' => ['required', 'array', 'min:1'],
             'scheduled_at' => ['nullable', 'date', 'after:now'],
             'is_test' => ['nullable', 'boolean'],
+            // Automated campaign fields
+            'type' => ['nullable', 'in:one_time,automated'],
+            'check_interval_minutes' => ['nullable', 'integer', 'min:1', 'max:10080'], // max 1 week
+            'cooldown_days' => ['nullable', 'integer', 'min:1', 'max:365'],
+            'ends_at' => ['nullable', 'date', 'after:now'],
         ]);
 
         if ($validator->fails()) {
@@ -154,15 +159,37 @@ class CampaignController extends Controller
             ], 422);
         }
 
+        // Determine campaign type
+        $type = $request->input('type', 'one_time');
+        $isAutomated = $type === 'automated';
+
+        // Validate automated campaign requires check_interval_minutes
+        if ($isAutomated && !$request->input('check_interval_minutes')) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Automated campaigns require check_interval_minutes',
+            ], 422);
+        }
+
+        // Determine initial status
+        $status = 'draft';
+        if (!$isAutomated && $request->input('scheduled_at')) {
+            $status = 'scheduled';
+        }
+
         // Create campaign
         $campaign = Campaign::create([
             'client_id' => $client->id,
             'name' => $request->input('name'),
             'sender' => $request->input('sender'),
             'message_template' => $request->input('message_template'),
-            'status' => $request->input('scheduled_at') ? 'scheduled' : 'draft',
+            'status' => $status,
+            'type' => $type,
+            'check_interval_minutes' => $isAutomated ? $request->input('check_interval_minutes') : null,
+            'cooldown_days' => $request->input('cooldown_days', 30),
+            'ends_at' => $isAutomated ? $request->input('ends_at') : null,
             'segment_filter' => $segmentFilter,
-            'scheduled_at' => $request->input('scheduled_at'),
+            'scheduled_at' => !$isAutomated ? $request->input('scheduled_at') : null,
             'target_count' => $targetCount,
             'created_by' => $client->user_id,
             'is_test' => $request->input('is_test', false),
@@ -199,11 +226,11 @@ class CampaignController extends Controller
             ], 404);
         }
 
-        // Only draft campaigns can be updated
-        if ($campaign->status !== 'draft') {
+        // Only draft or paused campaigns can be updated
+        if (!in_array($campaign->status, ['draft', 'paused'])) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Only draft campaigns can be updated',
+                'message' => 'Only draft or paused campaigns can be updated',
             ], 422);
         }
 
@@ -217,6 +244,10 @@ class CampaignController extends Controller
             'segment_filter' => ['nullable', 'array'],
             'scheduled_at' => ['nullable', 'date', 'after:now'],
             'is_test' => ['nullable', 'boolean'],
+            // Automated campaign fields
+            'check_interval_minutes' => ['nullable', 'integer', 'min:1', 'max:10080'],
+            'cooldown_days' => ['nullable', 'integer', 'min:1', 'max:365'],
+            'ends_at' => ['nullable', 'date', 'after:now'],
         ]);
 
         if ($validator->fails()) {
@@ -258,6 +289,21 @@ class CampaignController extends Controller
 
         if ($request->has('is_test')) {
             $campaign->is_test = $request->input('is_test');
+        }
+
+        // Automated campaign specific fields
+        if ($campaign->type === 'automated') {
+            if ($request->has('check_interval_minutes')) {
+                $campaign->check_interval_minutes = $request->input('check_interval_minutes');
+            }
+
+            if ($request->has('cooldown_days')) {
+                $campaign->cooldown_days = $request->input('cooldown_days');
+            }
+
+            if ($request->has('ends_at')) {
+                $campaign->ends_at = $request->input('ends_at');
+            }
         }
 
         $campaign->save();
@@ -648,6 +694,106 @@ class CampaignController extends Controller
                     'per_page' => $messages->perPage(),
                     'total' => $messages->total(),
                 ],
+            ],
+        ], 200);
+    }
+
+    /**
+     * Activate an automated campaign (start running it)
+     *
+     * @param Request $request
+     * @param int $id
+     * @return JsonResponse
+     */
+    public function activate(Request $request, int $id): JsonResponse
+    {
+        $client = $request->attributes->get('client');
+
+        $campaign = Campaign::where('client_id', $client->id)
+            ->where('id', $id)
+            ->first();
+
+        if (!$campaign) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Campaign not found',
+            ], 404);
+        }
+
+        // Only automated campaigns can be activated
+        if ($campaign->type !== 'automated') {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Only automated campaigns can be activated',
+            ], 422);
+        }
+
+        // Only draft or paused campaigns can be activated
+        if (!in_array($campaign->status, ['draft', 'paused'])) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Only draft or paused campaigns can be activated',
+            ], 422);
+        }
+
+        // Activate the campaign
+        $campaign->activate();
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Campaign activated successfully',
+            'data' => [
+                'campaign' => $campaign->fresh(),
+            ],
+        ], 200);
+    }
+
+    /**
+     * Pause an automated campaign
+     *
+     * @param Request $request
+     * @param int $id
+     * @return JsonResponse
+     */
+    public function pause(Request $request, int $id): JsonResponse
+    {
+        $client = $request->attributes->get('client');
+
+        $campaign = Campaign::where('client_id', $client->id)
+            ->where('id', $id)
+            ->first();
+
+        if (!$campaign) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Campaign not found',
+            ], 404);
+        }
+
+        // Only automated campaigns can be paused
+        if ($campaign->type !== 'automated') {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Only automated campaigns can be paused',
+            ], 422);
+        }
+
+        // Only active campaigns can be paused
+        if ($campaign->status !== 'active') {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Only active campaigns can be paused',
+            ], 422);
+        }
+
+        // Pause the campaign
+        $campaign->pause();
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Campaign paused successfully',
+            'data' => [
+                'campaign' => $campaign->fresh(),
             ],
         ], 200);
     }

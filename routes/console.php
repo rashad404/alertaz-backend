@@ -64,3 +64,8 @@ Schedule::command('alerts:check --type=stock')->everyMinute()
 Schedule::command('alerts:check --type=currency')->everyFiveMinutes()
     ->withoutOverlapping()
     ->runInBackground();
+
+// Run automated SMS campaigns every minute
+Schedule::command('campaigns:run-automated')->everyMinute()
+    ->withoutOverlapping()
+    ->runInBackground();
