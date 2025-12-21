@@ -581,12 +581,13 @@ class CampaignController extends Controller
             ], 404);
         }
 
-        $previews = $this->executionEngine->previewMessages($campaign, $limit);
+        $previewData = $this->executionEngine->previewMessages($campaign, $limit);
 
         return response()->json([
             'status' => 'success',
             'data' => [
-                'previews' => $previews,
+                'total_count' => $previewData['total_count'],
+                'previews' => $previewData['previews'],
                 'campaign' => $campaign,
             ],
         ], 200);

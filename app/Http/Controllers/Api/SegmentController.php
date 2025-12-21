@@ -67,7 +67,7 @@ class SegmentController extends Controller
             'filter.conditions.*.key' => ['required', 'string'],
             'filter.conditions.*.operator' => ['required', 'string'],
             'filter.conditions.*.value' => ['nullable'],
-            'preview_limit' => ['nullable', 'integer', 'min:1', 'max:100'],
+            'preview_limit' => ['nullable', 'integer', 'min:0', 'max:100'],
         ]);
 
         if ($validator->fails()) {
@@ -85,8 +85,10 @@ class SegmentController extends Controller
             // Count total matches
             $totalCount = $this->queryBuilder->countMatches($client->id, $filter);
 
-            // Get sample contacts
-            $sampleContacts = $this->queryBuilder->getMatches($client->id, $filter, $previewLimit);
+            // Get sample contacts (skip if preview_limit is 0)
+            $sampleContacts = $previewLimit > 0
+                ? $this->queryBuilder->getMatches($client->id, $filter, $previewLimit)
+                : collect();
 
             return response()->json([
                 'status' => 'success',

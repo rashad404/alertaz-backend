@@ -348,6 +348,12 @@ class CampaignExecutionEngine
      */
     public function previewMessages(Campaign $campaign, int $limit = 5): array
     {
+        // Get fresh total count
+        $totalCount = $this->queryBuilder->countMatches(
+            $campaign->client_id,
+            $campaign->segment_filter
+        );
+
         $contacts = $this->queryBuilder->getMatches(
             $campaign->client_id,
             $campaign->segment_filter,
@@ -372,6 +378,9 @@ class CampaignExecutionEngine
             ];
         }
 
-        return $previews;
+        return [
+            'total_count' => $totalCount,
+            'previews' => $previews,
+        ];
     }
 }
