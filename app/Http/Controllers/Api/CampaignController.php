@@ -5,7 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Campaign;
 use App\Models\SavedSegment;
-use App\Models\SMSMessage;
+use App\Models\SmsMessage;
 use App\Models\UserSender;
 use App\Services\SegmentQueryBuilder;
 use App\Services\CampaignExecutionEngine;
@@ -706,7 +706,7 @@ class CampaignController extends Controller
             ], 404);
         }
 
-        $messages = SMSMessage::where('campaign_id', $id)
+        $messages = SmsMessage::where('campaign_id', $id)
             ->with('contact:id,phone,attributes')
             ->orderBy('created_at', 'desc')
             ->paginate($perPage);

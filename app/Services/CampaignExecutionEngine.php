@@ -3,7 +3,7 @@
 namespace App\Services;
 
 use App\Models\Campaign;
-use App\Models\SMSMessage;
+use App\Models\SmsMessage;
 use App\Models\Contact;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
@@ -127,7 +127,7 @@ class CampaignExecutionEngine
                     }
 
                     // Create SMS message record
-                    SMSMessage::create([
+                    SmsMessage::create([
                         'user_id' => $campaign->created_by,
                         'source' => 'campaign',
                         'client_id' => $campaign->client_id,
@@ -153,7 +153,7 @@ class CampaignExecutionEngine
                     $failedCount++;
 
                     // Create failed message record
-                    SMSMessage::create([
+                    SmsMessage::create([
                         'user_id' => $campaign->created_by,
                         'source' => 'campaign',
                         'client_id' => $campaign->client_id,

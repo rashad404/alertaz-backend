@@ -5,7 +5,7 @@ namespace App\Jobs;
 use App\Models\Campaign;
 use App\Models\CampaignContactLog;
 use App\Models\Contact;
-use App\Models\SMSMessage;
+use App\Models\SmsMessage;
 use App\Models\User;
 use App\Services\TemplateRenderer;
 use Illuminate\Bus\Queueable;
@@ -126,7 +126,7 @@ class SendCampaignMessage implements ShouldQueue
         }
 
         // Create SMS message record
-        SMSMessage::create([
+        SmsMessage::create([
             'user_id' => $this->campaign->created_by,
             'source' => 'campaign',
             'client_id' => $this->campaign->client_id,

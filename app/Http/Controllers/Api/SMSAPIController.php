@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\SMSMessage;
+use App\Models\SmsMessage;
 use App\Models\UserAllowedSender;
 use App\Services\QuickSMSService;
 use Illuminate\Http\JsonResponse;
@@ -76,7 +76,7 @@ class SMSAPIController extends Controller
         $unicode = $this->smsService->requiresUnicode($message);
 
         // Create SMS record
-        $smsMessage = SMSMessage::create([
+        $smsMessage = SmsMessage::create([
             'user_id' => $user->id,
             'phone' => $phone,
             'message' => $message,
@@ -152,7 +152,7 @@ class SMSAPIController extends Controller
         $user = $request->user();
         $perPage = $request->input('per_page', 20);
 
-        $query = SMSMessage::forUser($user->id);
+        $query = SmsMessage::forUser($user->id);
 
         // Filter by source (api/campaign)
         if ($source = $request->input('source')) {
@@ -217,7 +217,7 @@ class SMSAPIController extends Controller
     {
         $user = $request->user();
 
-        $message = SMSMessage::where('id', $id)
+        $message = SmsMessage::where('id', $id)
             ->where('user_id', $user->id)
             ->first();
 
@@ -249,7 +249,7 @@ class SMSAPIController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Invalid webhook data'], 400);
         }
 
-        $message = SMSMessage::where('provider_transaction_id', $transactionId)->first();
+        $message = SmsMessage::where('provider_transaction_id', $transactionId)->first();
 
         if (!$message) {
             Log::warning('Webhook received for unknown transaction', [
