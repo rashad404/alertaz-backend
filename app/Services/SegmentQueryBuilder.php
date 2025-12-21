@@ -449,10 +449,30 @@ class SegmentQueryBuilder
      * @param int $limit
      * @return \Illuminate\Support\Collection
      */
-    public function getMatches(int $clientId, array $filter, int $limit = 100): \Illuminate\Support\Collection
+    public function getMatches(int $clientId, array $filter, ?int $limit = null): \Illuminate\Support\Collection
     {
         $query = \App\Models\Contact::where('client_id', $clientId);
         $this->applyFilters($query, $filter);
-        return $query->limit($limit)->get();
+
+        if ($limit !== null) {
+            $query->limit($limit);
+        }
+
+        return $query->get();
+    }
+
+    /**
+     * Get query builder for contacts matching the filter
+     * Use this with chunk() for large datasets
+     *
+     * @param int $clientId
+     * @param array $filter
+     * @return Builder
+     */
+    public function getMatchesQuery(int $clientId, array $filter): Builder
+    {
+        $query = \App\Models\Contact::where('client_id', $clientId);
+        $this->applyFilters($query, $filter);
+        return $query;
     }
 }

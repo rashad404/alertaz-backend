@@ -13,7 +13,6 @@ class CampaignExecutionEngine
 {
     protected SegmentQueryBuilder $queryBuilder;
     protected TemplateRenderer $templateRenderer;
-    protected float $smsPrice = 0.05; // Price per SMS
 
     public function __construct(
         SegmentQueryBuilder $queryBuilder,
@@ -85,7 +84,7 @@ class CampaignExecutionEngine
 
                     // Calculate cost
                     $segments = $this->templateRenderer->calculateSMSSegments($message);
-                    $cost = $segments * $this->smsPrice;
+                    $cost = $segments * config('app.sms_cost_per_message', 0.04);
 
                     // Check user balance
                     if (!$mockMode && $user->balance < $cost) {

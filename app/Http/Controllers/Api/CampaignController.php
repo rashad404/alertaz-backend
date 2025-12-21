@@ -124,10 +124,11 @@ class CampaignController extends Controller
         // Get available senders for validation
         $availableSenders = UserSender::getAvailableSenders($client->user_id);
 
+        $maxMessageLength = config('app.sms_max_message_length', 500);
         $validator = Validator::make($request->all(), [
             'name' => ['required', 'string', 'max:255'],
             'sender' => ['required', 'string', 'max:11', 'in:' . implode(',', $availableSenders)],
-            'message_template' => ['required', 'string', 'max:500'],
+            'message_template' => ['required', 'string', 'max:' . $maxMessageLength],
             'segment_filter' => ['required', 'array'],
             'segment_filter.logic' => ['nullable', 'in:AND,OR'],
             'segment_filter.conditions' => ['required', 'array', 'min:1'],
@@ -145,6 +146,15 @@ class CampaignController extends Controller
                 'status' => 'error',
                 'message' => 'Validation failed',
                 'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        // Check for Unicode characters in message_template (only GSM-7 allowed)
+        $messageTemplate = $request->input('message_template');
+        if (mb_strlen($messageTemplate) !== strlen($messageTemplate)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Message contains special characters. Only Latin characters are allowed for SMS.',
             ], 422);
         }
 
@@ -237,10 +247,11 @@ class CampaignController extends Controller
         // Get available senders for validation
         $availableSenders = UserSender::getAvailableSenders($client->user_id);
 
+        $maxMessageLength = config('app.sms_max_message_length', 500);
         $validator = Validator::make($request->all(), [
             'name' => ['nullable', 'string', 'max:255'],
             'sender' => ['nullable', 'string', 'max:11', 'in:' . implode(',', $availableSenders)],
-            'message_template' => ['nullable', 'string', 'max:500'],
+            'message_template' => ['nullable', 'string', 'max:' . $maxMessageLength],
             'segment_filter' => ['nullable', 'array'],
             'scheduled_at' => ['nullable', 'date', 'after:now'],
             'is_test' => ['nullable', 'boolean'],
@@ -256,6 +267,17 @@ class CampaignController extends Controller
                 'message' => 'Validation failed',
                 'errors' => $validator->errors(),
             ], 422);
+        }
+
+        // Check for Unicode characters in message_template (only GSM-7 allowed)
+        if ($request->has('message_template')) {
+            $messageTemplate = $request->input('message_template');
+            if (mb_strlen($messageTemplate) !== strlen($messageTemplate)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Message contains special characters. Only Latin characters are allowed for SMS.',
+                ], 422);
+            }
         }
 
         // Update fields
@@ -633,18 +655,23 @@ class CampaignController extends Controller
         // Recalculate target count (contacts may have changed)
         $targetCount = $this->queryBuilder->countMatches($client->id, $campaign->segment_filter);
 
-        // Create a copy as draft
+        // Create a copy as draft (includes automated campaign settings)
         $newCampaign = Campaign::create([
             'client_id' => $client->id,
             'name' => $campaign->name . ' (copy)',
             'sender' => $campaign->sender,
             'message_template' => $campaign->message_template,
             'status' => 'draft',
+            'type' => $campaign->type,
             'segment_filter' => $campaign->segment_filter,
             'scheduled_at' => null,
             'target_count' => $targetCount,
             'created_by' => $client->user_id,
             'is_test' => $campaign->is_test,
+            // Automated campaign settings
+            'check_interval_minutes' => $campaign->check_interval_minutes,
+            'cooldown_days' => $campaign->cooldown_days,
+            'ends_at' => null, // Reset end date for new campaign
         ]);
 
         return response()->json([

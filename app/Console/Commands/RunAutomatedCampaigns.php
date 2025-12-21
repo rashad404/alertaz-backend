@@ -19,7 +19,7 @@ class RunAutomatedCampaigns extends Command
      *
      * @var string
      */
-    protected $description = 'Run all due automated/triggered campaigns';
+    protected $description = 'Run all due automated/triggered campaigns (dispatches jobs to queue)';
 
     /**
      * Execute the console command.
@@ -35,30 +35,36 @@ class RunAutomatedCampaigns extends Command
             return Command::SUCCESS;
         }
 
-        $totalSent = 0;
-        $totalFailed = 0;
+        $totalDispatched = 0;
+        $totalSkipped = 0;
 
         foreach ($results as $result) {
             $campaignId = $result['campaign_id'];
 
             if ($result['success']) {
-                $sent = $result['sent'] ?? 0;
-                $failed = $result['failed'] ?? 0;
+                $dispatched = $result['dispatched'] ?? 0;
                 $skipped = $result['skipped'] ?? 0;
-                $mockMode = $result['mock_mode'] ?? false;
+                $message = $result['message'] ?? null;
 
-                $totalSent += $sent;
-                $totalFailed += $failed;
+                $totalDispatched += $dispatched;
+                $totalSkipped += $skipped;
 
-                $mode = $mockMode ? ' [TEST MODE]' : '';
-                $this->line("Campaign #{$campaignId}: Sent {$sent}, Failed {$failed}, Skipped {$skipped}{$mode}");
+                if ($message) {
+                    $this->line("Campaign #{$campaignId}: {$message}");
+                } else {
+                    $this->line("Campaign #{$campaignId}: Dispatched {$dispatched} jobs, Skipped {$skipped} (cooldown)");
+                }
             } else {
                 $error = $result['error'] ?? 'Unknown error';
                 $this->error("Campaign #{$campaignId}: Failed - {$error}");
             }
         }
 
-        $this->info("Finished running " . count($results) . " campaign(s). Total: {$totalSent} sent, {$totalFailed} failed.");
+        $this->info("Finished running " . count($results) . " campaign(s). Total: {$totalDispatched} jobs dispatched, {$totalSkipped} skipped.");
+
+        if ($totalDispatched > 0) {
+            $this->comment("Jobs will be processed by queue worker with rate limit: " . config('app.sms_rate_limit_per_second', 10) . " SMS/second");
+        }
 
         return Command::SUCCESS;
     }
