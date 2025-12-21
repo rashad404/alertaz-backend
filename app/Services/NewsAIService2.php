@@ -6,7 +6,7 @@ use App\Services\AI\AIProviderFactory;
 use App\Contracts\AIProviderInterface;
 use Illuminate\Support\Facades\Log;
 
-class NewsAIService
+class NewsAiService
 {
     protected AIProviderInterface $aiProvider;
 

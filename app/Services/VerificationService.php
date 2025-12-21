@@ -3,7 +3,7 @@
 namespace App\Services;
 
 use App\Models\User;
-use App\Models\OTPVerification;
+use App\Models\OtpVerification;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
@@ -39,7 +39,7 @@ class VerificationService
             $code = $this->isLocalMode() ? $this->getMockCode() : $this->generateCode();
 
             // Store verification record
-            $verification = OTPVerification::create([
+            $verification = OtpVerification::create([
                 'phone' => $phone,
                 'email' => null,
                 'code' => $code,
@@ -101,7 +101,7 @@ class VerificationService
             $code = $this->isLocalMode() ? $this->getMockCode() : $this->generateCode();
 
             // Store verification record
-            $verification = OTPVerification::create([
+            $verification = OtpVerification::create([
                 'phone' => null,
                 'email' => $email,
                 'code' => $code,
@@ -165,9 +165,9 @@ class VerificationService
 
                 // Clean up any existing verifications for this identifier
                 if ($type === 'sms') {
-                    OTPVerification::where('phone', $identifier)->delete();
+                    OtpVerification::where('phone', $identifier)->delete();
                 } else {
-                    OTPVerification::where('email', $identifier)->delete();
+                    OtpVerification::where('email', $identifier)->delete();
                 }
 
                 return [
@@ -181,7 +181,7 @@ class VerificationService
             }
 
             // Find the most recent valid verification
-            $query = OTPVerification::where('type', $type)
+            $query = OtpVerification::where('type', $type)
                 ->where('code', $code)
                 ->where('expires_at', '>', now())
                 ->where('verified_at', null);
@@ -208,11 +208,11 @@ class VerificationService
 
             // Clean up old verifications for this identifier
             if ($type === 'sms') {
-                OTPVerification::where('phone', $identifier)
+                OtpVerification::where('phone', $identifier)
                     ->where('id', '!=', $verification->id)
                     ->delete();
             } else {
-                OTPVerification::where('email', $identifier)
+                OtpVerification::where('email', $identifier)
                     ->where('id', '!=', $verification->id)
                     ->delete();
             }
@@ -240,7 +240,7 @@ class VerificationService
     public function resendCode(string $identifier, string $type = 'sms'): array
     {
         // Check for rate limiting
-        $recentAttempt = OTPVerification::where('type', $type)
+        $recentAttempt = OtpVerification::where('type', $type)
             ->where($type === 'sms' ? 'phone' : 'email', $identifier)
             ->where('created_at', '>', now()->subMinute())
             ->exists();
@@ -254,7 +254,7 @@ class VerificationService
         }
 
         // Delete old codes for this identifier
-        OTPVerification::where('type', $type)
+        OtpVerification::where('type', $type)
             ->where($type === 'sms' ? 'phone' : 'email', $identifier)
             ->where('verified_at', null)
             ->delete();
@@ -479,7 +479,7 @@ class VerificationService
      */
     public function isRecentlyVerified(string $identifier, string $type = 'sms', int $minutes = 30): bool
     {
-        $query = OTPVerification::where('type', $type)
+        $query = OtpVerification::where('type', $type)
             ->where('verified_at', '>', now()->subMinutes($minutes));
 
         if ($type === 'sms') {
@@ -496,7 +496,7 @@ class VerificationService
      */
     public function cleanupExpired(): int
     {
-        return OTPVerification::where('expires_at', '<', now())
+        return OtpVerification::where('expires_at', '<', now())
             ->orWhere('created_at', '<', now()->subDay())
             ->delete();
     }

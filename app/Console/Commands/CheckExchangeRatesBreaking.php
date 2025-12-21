@@ -3,7 +3,7 @@
 namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
-use App\Services\NewsAIService;
+use App\Services\NewsAiService;
 use App\Services\ExchangeRateAnalyzer;
 use App\Models\News;
 use App\Models\Category;
@@ -59,7 +59,7 @@ class CheckExchangeRatesBreaking extends Command
             $this->info('⚠ Breaking news detected for ' . count($breakingNews) . ' currency(ies)');
 
             $provider = $this->option('provider');
-            $aiService = new NewsAIService($provider);
+            $aiService = new NewsAiService($provider);
             $category = $this->getOrCreateCategory();
 
             if (!$category) {

@@ -3,7 +3,7 @@
 namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
-use App\Services\NewsAIService;
+use App\Services\NewsAiService;
 use App\Services\ExchangeRateAnalyzer;
 use App\Models\News;
 use App\Models\Category;
@@ -52,7 +52,7 @@ class GenerateExchangeRatesSummary extends Command
             $this->info('Previous rates: ' . json_encode($ratesData['previous']));
 
             $provider = $this->option('provider');
-            $aiService = new NewsAIService($provider);
+            $aiService = new NewsAiService($provider);
 
             $this->info('Generating article with AI...');
             if ($provider) {

@@ -2,13 +2,13 @@
 
 namespace App\Services;
 
-use App\Models\OTPVerification;
+use App\Models\OtpVerification;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
-class OTPService
+class OtpService
 {
     /**
      * Send OTP to phone number.
@@ -16,12 +16,12 @@ class OTPService
     public function sendOTP($phone, $purpose = 'login')
     {
         // Clean up old OTPs for this phone
-        OTPVerification::where('phone', $phone)
+        OtpVerification::where('phone', $phone)
             ->where('expires_at', '<', now())
             ->delete();
 
         // Check if there's a recent OTP (rate limiting)
-        $recentOTP = OTPVerification::where('phone', $phone)
+        $recentOTP = OtpVerification::where('phone', $phone)
             ->where('created_at', '>', now()->subMinute())
             ->first();
 
@@ -41,7 +41,7 @@ class OTPService
         }
 
         // Create OTP record
-        $otp = OTPVerification::create([
+        $otp = OtpVerification::create([
             'phone' => $phone,
             'code' => $code,
             'purpose' => $purpose,
@@ -71,7 +71,7 @@ class OTPService
      */
     public function verifyOTP($phone, $code)
     {
-        $otp = OTPVerification::where('phone', $phone)
+        $otp = OtpVerification::where('phone', $phone)
             ->where('code', $code)
             ->where('expires_at', '>', now())
             ->whereNull('verified_at')
@@ -79,7 +79,7 @@ class OTPService
 
         if (!$otp) {
             // Increment attempts for the most recent OTP
-            OTPVerification::where('phone', $phone)
+            OtpVerification::where('phone', $phone)
                 ->whereNull('verified_at')
                 ->orderBy('created_at', 'desc')
                 ->first()
@@ -151,7 +151,7 @@ class OTPService
      */
     public function cleanupExpiredOTPs()
     {
-        return OTPVerification::where('expires_at', '<', now()->subHours(24))
+        return OtpVerification::where('expires_at', '<', now()->subHours(24))
             ->delete();
     }
 }
