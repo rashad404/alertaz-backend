@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Exceptions\TemplateRenderException;
 use App\Models\Contact;
 
 class TemplateRenderer
@@ -33,6 +34,30 @@ class TemplateRenderer
 
             // Replace placeholder
             $message = str_replace("{{" . $key . "}}", $value, $message);
+        }
+
+        return $message;
+    }
+
+    /**
+     * Render template with strict mode - throws exception on unresolved variables
+     *
+     * @param string $template
+     * @param Contact $contact
+     * @return string
+     * @throws TemplateRenderException
+     */
+    public function renderStrict(string $template, Contact $contact): string
+    {
+        $message = $this->render($template, $contact);
+
+        // Check for remaining placeholders
+        if (preg_match_all('/\{\{([a-zA-Z0-9_]+)\}\}/', $message, $matches)) {
+            $unresolvedVariables = array_unique($matches[1]);
+            throw new TemplateRenderException(
+                'Unresolved template variables: ' . implode(', ', $unresolvedVariables),
+                $unresolvedVariables
+            );
         }
 
         return $message;

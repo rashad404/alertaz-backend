@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Exceptions\TemplateRenderException;
 use App\Models\Campaign;
 use App\Models\CampaignContactLog;
 use App\Models\Contact;
@@ -16,6 +17,7 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\Middleware\RateLimited;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
+use RuntimeException;
 
 class SendCampaignMessage implements ShouldQueue
 {
@@ -37,6 +39,11 @@ class SendCampaignMessage implements ShouldQueue
      * The number of seconds the job can run before timing out.
      */
     public int $timeout = 30;
+
+    /**
+     * Backoff intervals in seconds for retries.
+     */
+    public array $backoff = [30, 60, 120];
 
     /**
      * Create a new job instance.
@@ -82,11 +89,33 @@ class SendCampaignMessage implements ShouldQueue
         // Get user for balance
         $user = User::find($this->campaign->client->user_id);
 
-        // Render message
-        $message = $templateRenderer->render(
-            $this->campaign->message_template,
-            $this->contact
-        );
+        // Render message with strict mode (throws exception on unresolved variables)
+        try {
+            $message = $templateRenderer->renderStrict(
+                $this->campaign->message_template,
+                $this->contact
+            );
+        } catch (TemplateRenderException $e) {
+            // Template rendering failed - permanent failure for this contact
+            Log::warning("Template rendering failed for campaign {$this->campaign->id}", [
+                'contact_id' => $this->contact->id,
+                'phone' => $this->contact->phone,
+                'error' => $e->getMessage(),
+                'unresolved_variables' => $e->getUnresolvedVariables(),
+            ]);
+
+            // Record as failed (permanent - don't retry)
+            $this->recordFailure(
+                $user,
+                $templateRenderer,
+                $this->campaign->message_template, // Use template as-is
+                $mockMode,
+                'Template error: ' . $e->getMessage(),
+                null
+            );
+            return;
+        }
+
         $message = $templateRenderer->sanitizeForSMS($message);
 
         // Calculate cost
@@ -106,6 +135,7 @@ class SendCampaignMessage implements ShouldQueue
         $deliveryStatus = null;
         $externalId = null;
         $errorMessage = null;
+        $errorCode = null;
 
         if ($mockMode) {
             $messageStatus = 'sent';
@@ -122,15 +152,49 @@ class SendCampaignMessage implements ShouldQueue
                 $deliveryStatus = 'pending';
                 $user->deductBalance($cost);
             } else {
-                $messageStatus = 'failed';
-                $deliveryStatus = 'failed';
+                $errorCode = $result['error_code'] ?? -500;
                 $errorMessage = $result['error_message'] ?? 'Unknown error';
-                $this->campaign->increment('failed_count');
+                $errorType = $smsService->categorizeError($errorCode);
+
                 Log::warning("Campaign SMS failed", [
                     'campaign_id' => $this->campaign->id,
+                    'contact_id' => $this->contact->id,
                     'phone' => $this->contact->phone,
+                    'error_code' => $errorCode,
+                    'error_type' => $errorType,
                     'error' => $errorMessage,
                 ]);
+
+                // Handle based on error type
+                switch ($errorType) {
+                    case 'permanent':
+                        // Invalid phone, blacklisted, invalid sender - never retry
+                        $messageStatus = 'failed';
+                        $deliveryStatus = 'failed';
+                        $this->campaign->increment('failed_count');
+                        break;
+
+                    case 'auth':
+                        // Auth error - pause campaign, needs admin action
+                        $this->campaign->pause();
+                        Log::error("Campaign {$this->campaign->id} paused due to auth error: {$errorMessage}");
+                        // Record and return (no retry)
+                        $this->recordFailure($user, $templateRenderer, $message, $mockMode, $errorMessage, $errorCode);
+                        return;
+
+                    case 'balance':
+                        // Provider balance error - pause campaign
+                        $this->campaign->pause();
+                        Log::error("Campaign {$this->campaign->id} paused due to provider balance error");
+                        // Record and return (no retry)
+                        $this->recordFailure($user, $templateRenderer, $message, $mockMode, $errorMessage, $errorCode);
+                        return;
+
+                    case 'temporary':
+                    default:
+                        // Server error, timeout - retry with backoff
+                        throw new RuntimeException("SMS send failed (temporary): {$errorMessage}");
+                }
             }
         }
 
@@ -161,6 +225,38 @@ class SendCampaignMessage implements ShouldQueue
 
             Log::info("SMS sent to {$this->contact->phone} for campaign {$this->campaign->id}");
         }
+    }
+
+    /**
+     * Record a failed message (for cases where we don't want to retry)
+     */
+    private function recordFailure(
+        User $user,
+        TemplateRenderer $templateRenderer,
+        string $message,
+        bool $mockMode,
+        string $errorMessage,
+        ?int $errorCode
+    ): void {
+        $segments = $templateRenderer->calculateSMSSegments($message);
+        $cost = $segments * config('app.sms_cost_per_message', 0.04);
+
+        SmsMessage::create([
+            'user_id' => $this->campaign->created_by,
+            'source' => 'campaign',
+            'client_id' => $this->campaign->client_id,
+            'campaign_id' => $this->campaign->id,
+            'contact_id' => $this->contact->id,
+            'phone' => $this->contact->phone,
+            'message' => $message,
+            'sender' => $this->campaign->sender,
+            'cost' => $cost,
+            'status' => 'failed',
+            'is_test' => $mockMode,
+            'error_message' => $errorMessage,
+        ]);
+
+        $this->campaign->increment('failed_count');
     }
 
     /**

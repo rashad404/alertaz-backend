@@ -24,6 +24,10 @@ class SmsMessage extends Model
         'provider_transaction_id',
         'delivery_status_code',
         'error_message',
+        'error_code',
+        'retry_count',
+        'last_retry_at',
+        'failure_reason',
         'sent_at',
         'delivered_at',
         'ip_address',
@@ -34,6 +38,7 @@ class SmsMessage extends Model
         'is_test' => 'boolean',
         'sent_at' => 'datetime',
         'delivered_at' => 'datetime',
+        'last_retry_at' => 'datetime',
     ];
 
     public function user(): BelongsTo
@@ -74,12 +79,22 @@ class SmsMessage extends Model
         ]);
     }
 
-    public function markAsFailed(string $errorMessage, ?int $statusCode = null): void
+    public function markAsFailed(string $errorMessage, ?int $statusCode = null, ?int $errorCode = null, ?string $failureReason = null): void
     {
         $this->update([
             'status' => 'failed',
             'error_message' => $errorMessage,
             'delivery_status_code' => $statusCode,
+            'error_code' => $errorCode,
+            'failure_reason' => $failureReason,
+        ]);
+    }
+
+    public function incrementRetryCount(): void
+    {
+        $this->update([
+            'retry_count' => $this->retry_count + 1,
+            'last_retry_at' => now(),
         ]);
     }
 

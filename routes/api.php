@@ -183,6 +183,9 @@ Route::middleware('auth.client')->group(function () {
     Route::post('/campaigns/{id}/duplicate', [CampaignController::class, 'duplicate']);
     Route::post('/campaigns/{id}/activate', [CampaignController::class, 'activate']);
     Route::post('/campaigns/{id}/pause', [CampaignController::class, 'pause']);
+    Route::post('/campaigns/{id}/test-send', [CampaignController::class, 'testSend']);
+    Route::post('/campaigns/{id}/test-send-custom', [CampaignController::class, 'testSendCustom']);
+    Route::post('/campaigns/{id}/retry-failed', [CampaignController::class, 'retryFailed']);
 });
 
 // Cryptocurrency Routes (public)

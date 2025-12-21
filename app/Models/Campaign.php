@@ -46,6 +46,10 @@ class Campaign extends Model
         'total_cost',
         'created_by',
         'is_test',
+        'balance_warning_20_sent',
+        'balance_warning_10_sent',
+        'balance_warning_5_sent',
+        'pause_reason',
     ];
 
     protected $casts = [
@@ -58,6 +62,9 @@ class Campaign extends Model
         'next_run_at' => 'datetime',
         'is_test' => 'boolean',
         'total_cost' => 'decimal:2',
+        'balance_warning_20_sent' => 'boolean',
+        'balance_warning_10_sent' => 'boolean',
+        'balance_warning_5_sent' => 'boolean',
     ];
 
     // Relationships
@@ -194,6 +201,11 @@ class Campaign extends Model
         $this->update([
             'status' => self::STATUS_ACTIVE,
             'next_run_at' => now(),
+            // Reset warning flags on reactivation
+            'balance_warning_20_sent' => false,
+            'balance_warning_10_sent' => false,
+            'balance_warning_5_sent' => false,
+            'pause_reason' => null,
         ]);
     }
 
@@ -202,6 +214,25 @@ class Campaign extends Model
         $this->update([
             'status' => self::STATUS_PAUSED,
             'next_run_at' => null,
+        ]);
+    }
+
+    public function pauseWithReason(string $reason): void
+    {
+        $this->update([
+            'status' => self::STATUS_PAUSED,
+            'next_run_at' => null,
+            'pause_reason' => $reason,
+        ]);
+    }
+
+    public function resetWarningFlags(): void
+    {
+        $this->update([
+            'balance_warning_20_sent' => false,
+            'balance_warning_10_sent' => false,
+            'balance_warning_5_sent' => false,
+            'pause_reason' => null,
         ]);
     }
 
@@ -219,5 +250,39 @@ class Campaign extends Model
     public function hasEnded(): bool
     {
         return $this->ends_at && $this->ends_at->isPast();
+    }
+
+    /**
+     * Estimate total cost for the campaign
+     *
+     * @return array
+     */
+    public function estimateTotalCost(): array
+    {
+        $templateRenderer = app(\App\Services\TemplateRenderer::class);
+        $costPerSms = config('app.sms_cost_per_message', 0.04);
+
+        // Calculate segments based on template length (approximate - actual may vary with attribute values)
+        $segments = $templateRenderer->calculateSMSSegments($this->message_template);
+
+        // Total cost = target_count × segments × cost_per_sms
+        $totalCost = $this->target_count * $segments * $costPerSms;
+
+        return [
+            'target_count' => $this->target_count,
+            'segments_per_message' => $segments,
+            'cost_per_sms' => $costPerSms,
+            'estimated_total_cost' => round($totalCost, 2),
+        ];
+    }
+
+    /**
+     * Get the user who owns this campaign (via client)
+     *
+     * @return \App\Models\User|null
+     */
+    public function getOwnerUser(): ?\App\Models\User
+    {
+        return $this->client?->user;
     }
 }

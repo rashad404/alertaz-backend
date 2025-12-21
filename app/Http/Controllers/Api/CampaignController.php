@@ -735,6 +735,7 @@ class CampaignController extends Controller
     public function activate(Request $request, int $id): JsonResponse
     {
         $client = $request->attributes->get('client');
+        $confirmed = $request->input('confirm', false);
 
         $campaign = Campaign::where('client_id', $client->id)
             ->where('id', $id)
@@ -763,6 +764,78 @@ class CampaignController extends Controller
             ], 422);
         }
 
+        // Validate template with a sample contact
+        $sampleContact = $this->queryBuilder->getMatchingContacts($client->id, $campaign->segment_filter, 1)->first();
+        if ($sampleContact) {
+            $templateRenderer = app(\App\Services\TemplateRenderer::class);
+            try {
+                $templateRenderer->renderStrict($campaign->message_template, $sampleContact);
+            } catch (\App\Exceptions\TemplateRenderException $e) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Template validation failed',
+                    'code' => 'TEMPLATE_VALIDATION_FAILED',
+                    'data' => [
+                        'unresolved_variables' => $e->getUnresolvedVariables(),
+                        'error' => $e->getMessage(),
+                    ],
+                ], 422);
+            }
+        }
+
+        // Get cost estimate
+        $costEstimate = $campaign->estimateTotalCost();
+        $user = $campaign->getOwnerUser();
+
+        if (!$user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Campaign owner not found',
+            ], 500);
+        }
+
+        // Check if test mode (skip balance check)
+        $globalTestMode = config('services.quicksms.test_mode', false);
+        $isTestMode = $campaign->is_test || $globalTestMode;
+
+        if (!$isTestMode) {
+            // Check balance
+            $estimatedCost = $costEstimate['estimated_total_cost'];
+            $currentBalance = (float) $user->balance;
+
+            if ($currentBalance < $estimatedCost) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Insufficient balance',
+                    'code' => 'INSUFFICIENT_BALANCE',
+                    'data' => [
+                        'target_count' => $costEstimate['target_count'],
+                        'segments_per_message' => $costEstimate['segments_per_message'],
+                        'estimated_cost' => $estimatedCost,
+                        'current_balance' => $currentBalance,
+                        'shortfall' => round($estimatedCost - $currentBalance, 2),
+                    ],
+                ], 402);
+            }
+
+            // Large campaign confirmation (1000+ contacts)
+            $confirmationThreshold = config('app.campaign_confirmation_threshold', 1000);
+            if ($campaign->target_count >= $confirmationThreshold && !$confirmed) {
+                return response()->json([
+                    'status' => 'confirmation_required',
+                    'message' => "This campaign will send to {$campaign->target_count} contacts. Please confirm to proceed.",
+                    'code' => 'CONFIRMATION_REQUIRED',
+                    'data' => [
+                        'target_count' => $costEstimate['target_count'],
+                        'segments_per_message' => $costEstimate['segments_per_message'],
+                        'estimated_cost' => $estimatedCost,
+                        'current_balance' => $currentBalance,
+                        'confirmation_threshold' => $confirmationThreshold,
+                    ],
+                ], 412);
+            }
+        }
+
         // Activate the campaign
         $campaign->activate();
 
@@ -771,6 +844,7 @@ class CampaignController extends Controller
             'message' => 'Campaign activated successfully',
             'data' => [
                 'campaign' => $campaign->fresh(),
+                'cost_estimate' => $costEstimate,
             ],
         ], 200);
     }
@@ -821,6 +895,429 @@ class CampaignController extends Controller
             'message' => 'Campaign paused successfully',
             'data' => [
                 'campaign' => $campaign->fresh(),
+            ],
+        ], 200);
+    }
+
+    /**
+     * Test send to X customers (partial send preview)
+     * Sends real SMS to first N matching contacts
+     *
+     * @param Request $request
+     * @param int $id
+     * @return JsonResponse
+     */
+    public function testSend(Request $request, int $id): JsonResponse
+    {
+        $client = $request->attributes->get('client');
+
+        $campaign = Campaign::where('client_id', $client->id)
+            ->where('id', $id)
+            ->first();
+
+        if (!$campaign) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Campaign not found',
+            ], 404);
+        }
+
+        $validator = \Illuminate\Support\Facades\Validator::make($request->all(), [
+            'count' => ['required', 'integer', 'min:1', 'max:100'],
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Validation failed',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $count = $request->input('count');
+        $user = $campaign->getOwnerUser();
+
+        if (!$user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Campaign owner not found',
+            ], 500);
+        }
+
+        // Get matching contacts
+        $contacts = $this->queryBuilder->getMatchingContacts(
+            $client->id,
+            $campaign->segment_filter,
+            $count
+        );
+
+        if ($contacts->isEmpty()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'No contacts match the segment filter',
+            ], 422);
+        }
+
+        $templateRenderer = app(\App\Services\TemplateRenderer::class);
+        $smsService = app(\App\Services\QuickSmsService::class);
+        $costPerSms = config('app.sms_cost_per_message', 0.04);
+
+        // Check if test mode
+        $globalTestMode = config('services.quicksms.test_mode', false);
+
+        $results = [];
+        $totalCost = 0;
+        $sentCount = 0;
+        $failedCount = 0;
+
+        foreach ($contacts as $contact) {
+            // Render message
+            try {
+                $message = $templateRenderer->renderStrict($campaign->message_template, $contact);
+            } catch (\App\Exceptions\TemplateRenderException $e) {
+                $results[] = [
+                    'phone' => $contact->phone,
+                    'message' => null,
+                    'status' => 'failed',
+                    'error' => $e->getMessage(),
+                ];
+                $failedCount++;
+                continue;
+            }
+
+            $message = $templateRenderer->sanitizeForSMS($message);
+            $segments = $templateRenderer->calculateSMSSegments($message);
+            $cost = $segments * $costPerSms;
+
+            // Check balance
+            if (!$globalTestMode && $user->balance < $cost) {
+                $results[] = [
+                    'phone' => $contact->phone,
+                    'message' => $message,
+                    'status' => 'failed',
+                    'error' => 'Insufficient balance',
+                ];
+                $failedCount++;
+                continue;
+            }
+
+            // Send SMS
+            if ($globalTestMode) {
+                $status = 'sent';
+                $error = null;
+            } else {
+                $unicode = $smsService->requiresUnicode($message);
+                $result = $smsService->sendSMS($contact->phone, $message, $campaign->sender, $unicode);
+
+                if ($result['success']) {
+                    $status = 'sent';
+                    $error = null;
+                    $user->deductBalance($cost);
+                    $totalCost += $cost;
+
+                    // Record in sms_messages as test
+                    \App\Models\SmsMessage::create([
+                        'user_id' => $campaign->created_by,
+                        'source' => 'campaign',
+                        'client_id' => $campaign->client_id,
+                        'campaign_id' => $campaign->id,
+                        'contact_id' => $contact->id,
+                        'phone' => $contact->phone,
+                        'message' => $message,
+                        'sender' => $campaign->sender,
+                        'cost' => $cost,
+                        'status' => 'sent',
+                        'is_test' => true,
+                        'provider_transaction_id' => $result['transaction_id'] ?? null,
+                        'sent_at' => now(),
+                    ]);
+
+                    // Mark contact as sent so they won't receive duplicate when campaign runs
+                    \App\Models\CampaignContactLog::recordSend($campaign->id, $contact->id);
+                } else {
+                    $status = 'failed';
+                    $error = $result['error_message'] ?? 'Unknown error';
+                }
+            }
+
+            $results[] = [
+                'phone' => $contact->phone,
+                'message' => $message,
+                'segments' => $segments,
+                'cost' => $cost,
+                'status' => $status,
+                'error' => $error,
+            ];
+
+            if ($status === 'sent') {
+                $sentCount++;
+            } else {
+                $failedCount++;
+            }
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'message' => "Test send completed: {$sentCount} sent, {$failedCount} failed",
+            'data' => [
+                'sent' => $sentCount,
+                'failed' => $failedCount,
+                'total_cost' => round($totalCost, 2),
+                'messages' => $results,
+                'is_test_mode' => $globalTestMode,
+            ],
+        ], 200);
+    }
+
+    /**
+     * Test send to custom phone number
+     *
+     * @param Request $request
+     * @param int $id
+     * @return JsonResponse
+     */
+    public function testSendCustom(Request $request, int $id): JsonResponse
+    {
+        $client = $request->attributes->get('client');
+
+        $campaign = Campaign::where('client_id', $client->id)
+            ->where('id', $id)
+            ->first();
+
+        if (!$campaign) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Campaign not found',
+            ], 404);
+        }
+
+        $validator = \Illuminate\Support\Facades\Validator::make($request->all(), [
+            'phone' => ['required', 'string', 'regex:/^994[0-9]{9}$/'],
+            'sample_contact_id' => ['nullable', 'integer'],
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Validation failed',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $phone = $request->input('phone');
+        $sampleContactId = $request->input('sample_contact_id');
+        $user = $campaign->getOwnerUser();
+
+        if (!$user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Campaign owner not found',
+            ], 500);
+        }
+
+        // Get sample contact for attributes
+        if ($sampleContactId) {
+            $sampleContact = \App\Models\Contact::where('client_id', $client->id)
+                ->where('id', $sampleContactId)
+                ->first();
+        } else {
+            // Use first matching contact
+            $sampleContact = $this->queryBuilder->getMatchingContacts(
+                $client->id,
+                $campaign->segment_filter,
+                1
+            )->first();
+        }
+
+        if (!$sampleContact) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'No sample contact found for template rendering',
+            ], 422);
+        }
+
+        $templateRenderer = app(\App\Services\TemplateRenderer::class);
+        $smsService = app(\App\Services\QuickSmsService::class);
+        $costPerSms = config('app.sms_cost_per_message', 0.04);
+
+        // Render message
+        try {
+            $message = $templateRenderer->renderStrict($campaign->message_template, $sampleContact);
+        } catch (\App\Exceptions\TemplateRenderException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Template rendering failed',
+                'code' => 'TEMPLATE_ERROR',
+                'data' => [
+                    'unresolved_variables' => $e->getUnresolvedVariables(),
+                ],
+            ], 422);
+        }
+
+        $message = $templateRenderer->sanitizeForSMS($message);
+        $segments = $templateRenderer->calculateSMSSegments($message);
+        $cost = $segments * $costPerSms;
+
+        // Check if test mode
+        $globalTestMode = config('services.quicksms.test_mode', false);
+
+        // Check balance
+        if (!$globalTestMode && $user->balance < $cost) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Insufficient balance',
+                'code' => 'INSUFFICIENT_BALANCE',
+                'data' => [
+                    'required' => $cost,
+                    'available' => (float) $user->balance,
+                ],
+            ], 402);
+        }
+
+        // Send SMS
+        if ($globalTestMode) {
+            $status = 'sent';
+            $error = null;
+            $transactionId = 'test_' . time();
+        } else {
+            $unicode = $smsService->requiresUnicode($message);
+            $result = $smsService->sendSMS($phone, $message, $campaign->sender, $unicode);
+
+            if ($result['success']) {
+                $status = 'sent';
+                $error = null;
+                $transactionId = $result['transaction_id'] ?? null;
+                $user->deductBalance($cost);
+
+                // Record in sms_messages as test
+                \App\Models\SmsMessage::create([
+                    'user_id' => $campaign->created_by,
+                    'source' => 'campaign',
+                    'client_id' => $campaign->client_id,
+                    'campaign_id' => $campaign->id,
+                    'phone' => $phone,
+                    'message' => $message,
+                    'sender' => $campaign->sender,
+                    'cost' => $cost,
+                    'status' => 'sent',
+                    'is_test' => true,
+                    'provider_transaction_id' => $transactionId,
+                    'sent_at' => now(),
+                ]);
+            } else {
+                $status = 'failed';
+                $error = $result['error_message'] ?? 'Unknown error';
+                $transactionId = null;
+            }
+        }
+
+        return response()->json([
+            'status' => $status === 'sent' ? 'success' : 'error',
+            'message' => $status === 'sent' ? 'Test SMS sent successfully' : 'Failed to send test SMS',
+            'data' => [
+                'phone' => $phone,
+                'message' => $message,
+                'segments' => $segments,
+                'cost' => $cost,
+                'status' => $status,
+                'error' => $error,
+                'sample_contact_id' => $sampleContact->id,
+                'is_test_mode' => $globalTestMode,
+            ],
+        ], $status === 'sent' ? 200 : 500);
+    }
+
+    /**
+     * Retry failed messages (only temporary errors)
+     *
+     * @param Request $request
+     * @param int $id
+     * @return JsonResponse
+     */
+    public function retryFailed(Request $request, int $id): JsonResponse
+    {
+        $client = $request->attributes->get('client');
+
+        $campaign = Campaign::where('client_id', $client->id)
+            ->where('id', $id)
+            ->first();
+
+        if (!$campaign) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Campaign not found',
+            ], 404);
+        }
+
+        $smsService = app(\App\Services\QuickSmsService::class);
+
+        // Get failed messages that are retryable (not permanent errors)
+        $failedMessages = \App\Models\SmsMessage::where('campaign_id', $campaign->id)
+            ->where('status', 'failed')
+            ->whereNotNull('contact_id')
+            ->get();
+
+        if ($failedMessages->isEmpty()) {
+            return response()->json([
+                'status' => 'success',
+                'message' => 'No failed messages to retry',
+                'data' => [
+                    'queued' => 0,
+                    'skipped' => 0,
+                ],
+            ], 200);
+        }
+
+        $queued = 0;
+        $skipped = 0;
+        $skippedReasons = [];
+
+        foreach ($failedMessages as $msg) {
+            // Check if it's a permanent error (should not retry)
+            // We check error_message for patterns indicating permanent failure
+            $errorMessage = $msg->error_message ?? '';
+            $isPermanent = str_contains($errorMessage, 'Invalid phone') ||
+                          str_contains($errorMessage, 'blacklisted') ||
+                          str_contains($errorMessage, 'Invalid sender') ||
+                          str_contains($errorMessage, 'Template error');
+
+            if ($isPermanent) {
+                $skipped++;
+                $skippedReasons[] = [
+                    'phone' => $msg->phone,
+                    'reason' => 'Permanent error: ' . $errorMessage,
+                ];
+                continue;
+            }
+
+            // Get the contact
+            $contact = \App\Models\Contact::find($msg->contact_id);
+            if (!$contact) {
+                $skipped++;
+                $skippedReasons[] = [
+                    'phone' => $msg->phone,
+                    'reason' => 'Contact not found',
+                ];
+                continue;
+            }
+
+            // Dispatch new job
+            \App\Jobs\SendCampaignMessage::dispatch($campaign, $contact);
+            $queued++;
+
+            // Mark original message as retried
+            $msg->update([
+                'error_message' => $msg->error_message . ' [Retry queued at ' . now()->format('Y-m-d H:i:s') . ']',
+            ]);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'message' => "Retry queued: {$queued} messages, skipped: {$skipped}",
+            'data' => [
+                'queued' => $queued,
+                'skipped' => $skipped,
+                'skipped_details' => $skippedReasons,
             ],
         ], 200);
     }

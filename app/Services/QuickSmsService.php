@@ -265,4 +265,109 @@ class QuickSmsService
     {
         return preg_match('/[^\x00-\x7F]/', $message) === 1;
     }
+
+    /**
+     * Error codes that are permanent (never retry)
+     */
+    private const PERMANENT_ERRORS = [
+        -102, // Invalid phone number format
+        -103, // Invalid sender name
+        -105, // Phone number is blacklisted
+    ];
+
+    /**
+     * Error codes that are temporary (retry with backoff)
+     */
+    private const TEMPORARY_ERRORS = [
+        -500, // Internal server error
+        -109, // Host not found
+    ];
+
+    /**
+     * Error codes related to balance
+     */
+    private const BALANCE_ERRORS = [
+        -104, // Insufficient balance
+    ];
+
+    /**
+     * Error codes related to authentication
+     */
+    private const AUTH_ERRORS = [
+        -100, // Invalid authentication key
+        -107, // IP address not allowed
+        -108, // Invalid hash calculation
+    ];
+
+    /**
+     * Categorize an error code
+     *
+     * @param int $errorCode
+     * @return string One of: 'permanent', 'temporary', 'balance', 'auth', 'unknown'
+     */
+    public function categorizeError(int $errorCode): string
+    {
+        if (in_array($errorCode, self::PERMANENT_ERRORS)) {
+            return 'permanent';
+        }
+
+        if (in_array($errorCode, self::TEMPORARY_ERRORS)) {
+            return 'temporary';
+        }
+
+        if (in_array($errorCode, self::BALANCE_ERRORS)) {
+            return 'balance';
+        }
+
+        if (in_array($errorCode, self::AUTH_ERRORS)) {
+            return 'auth';
+        }
+
+        // Unknown errors are treated as temporary (retry)
+        return 'temporary';
+    }
+
+    /**
+     * Check if error is permanent (should never retry)
+     *
+     * @param int $errorCode
+     * @return bool
+     */
+    public function isPermanentError(int $errorCode): bool
+    {
+        return in_array($errorCode, self::PERMANENT_ERRORS);
+    }
+
+    /**
+     * Check if error is temporary (should retry with backoff)
+     *
+     * @param int $errorCode
+     * @return bool
+     */
+    public function isTemporaryError(int $errorCode): bool
+    {
+        return in_array($errorCode, self::TEMPORARY_ERRORS) || !$this->isPermanentError($errorCode);
+    }
+
+    /**
+     * Check if error is related to balance
+     *
+     * @param int $errorCode
+     * @return bool
+     */
+    public function isBalanceError(int $errorCode): bool
+    {
+        return in_array($errorCode, self::BALANCE_ERRORS);
+    }
+
+    /**
+     * Check if error is related to authentication
+     *
+     * @param int $errorCode
+     * @return bool
+     */
+    public function isAuthError(int $errorCode): bool
+    {
+        return in_array($errorCode, self::AUTH_ERRORS);
+    }
 }
