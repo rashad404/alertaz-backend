@@ -49,7 +49,7 @@ Complete multi-channel notification dispatcher with individual channel implement
 
 #### Implemented Channels:
 - **EmailChannel**: HTML email with markdown conversion
-- **SMSChannel**: Supports Twilio, Nexmo, Azercell
+- **SmsChannel**: Supports Twilio, Nexmo, Azercell
 - **TelegramChannel**: Bot API integration with markdown support
 - **WhatsAppChannel**: Twilio WhatsApp and Business API
 - **SlackChannel**: Webhook integration with rich formatting

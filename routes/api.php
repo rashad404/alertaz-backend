@@ -9,7 +9,7 @@ use App\Http\Controllers\Api\CryptoController;
 use App\Http\Controllers\Api\StockController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\AlertParseController;
-use App\Http\Controllers\Api\SMSAPIController;
+use App\Http\Controllers\Api\SmsAPIController;
 use App\Http\Controllers\Api\ClientSchemaController;
 use App\Http\Controllers\Api\CampaignContactController;
 use App\Http\Controllers\Api\SegmentController;
@@ -88,10 +88,10 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // SMS API Routes
     Route::prefix('sms')->group(function () {
-        Route::post('/send', [SMSAPIController::class, 'send']);
-        Route::get('/balance', [SMSAPIController::class, 'getBalance']);
-        Route::get('/history', [SMSAPIController::class, 'history']);
-        Route::get('/messages/{id}', [SMSAPIController::class, 'show']);
+        Route::post('/send', [SmsAPIController::class, 'send']);
+        Route::get('/balance', [SmsAPIController::class, 'getBalance']);
+        Route::get('/history', [SmsAPIController::class, 'history']);
+        Route::get('/messages/{id}', [SmsAPIController::class, 'show']);
     });
 
     // User Project Management (SMS Campaign Projects)
@@ -134,7 +134,7 @@ Route::middleware('auth:sanctum')->group(function () {
 Route::get('/notifications/vapid-public-key', [NotificationController::class, 'getVapidPublicKey']);
 
 // SMS Webhook (public - for delivery reports from QuickSMS)
-Route::post('/webhooks/sms/delivery', [SMSAPIController::class, 'handleWebhook']);
+Route::post('/webhooks/sms/delivery', [SmsAPIController::class, 'handleWebhook']);
 
 // Campaign Management API (Client Token Authentication)
 Route::middleware('auth.client')->group(function () {

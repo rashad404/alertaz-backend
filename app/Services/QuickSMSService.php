@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Exception;
 
-class QuickSMSService
+class QuickSmsService
 {
     private string $login;
     private string $password;

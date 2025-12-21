@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use App\Mail\AlertNotification;
 use App\Services\Notifications\EmailChannel;
-use App\Services\Notifications\SMSChannel;
+use App\Services\Notifications\SmsChannel;
 use App\Services\Notifications\TelegramChannel;
 use App\Services\Notifications\WhatsAppChannel;
 use App\Services\Notifications\SlackChannel;
@@ -24,7 +24,7 @@ class NotificationDispatcher
         // Initialize notification channels
         $this->channels = [
             'email' => new EmailChannel(),
-            'sms' => new SMSChannel(),
+            'sms' => new SmsChannel(),
             'telegram' => new TelegramChannel(),
             'whatsapp' => new WhatsAppChannel(),
             'slack' => new SlackChannel(),

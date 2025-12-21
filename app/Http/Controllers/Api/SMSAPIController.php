@@ -5,17 +5,17 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\SmsMessage;
 use App\Models\UserAllowedSender;
-use App\Services\QuickSMSService;
+use App\Services\QuickSmsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 
-class SMSAPIController extends Controller
+class SmsAPIController extends Controller
 {
-    private QuickSMSService $smsService;
+    private QuickSmsService $smsService;
 
-    public function __construct(QuickSMSService $smsService)
+    public function __construct(QuickSmsService $smsService)
     {
         $this->smsService = $smsService;
     }
