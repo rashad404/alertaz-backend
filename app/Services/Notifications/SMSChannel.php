@@ -7,7 +7,7 @@ use App\Models\PersonalAlert;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
-class SMSChannel implements NotificationChannel
+class SmsChannel implements NotificationChannel
 {
     private string $provider;
     private array $config;
