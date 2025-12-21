@@ -11,7 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 
-class SmsAPIController extends Controller
+class SmsApiController extends Controller
 {
     private QuickSmsService $smsService;
 
