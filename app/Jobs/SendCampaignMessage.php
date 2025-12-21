@@ -104,6 +104,7 @@ class SendCampaignMessage implements ShouldQueue
         $messageStatus = 'pending';
         $deliveryStatus = null;
         $externalId = null;
+        $errorMessage = null;
 
         if ($mockMode) {
             $messageStatus = 'sent';
@@ -119,6 +120,7 @@ class SendCampaignMessage implements ShouldQueue
             } else {
                 $messageStatus = 'failed';
                 $deliveryStatus = 'failed';
+                $errorMessage = $result['error'] ?? 'Unknown error';
                 $this->campaign->increment('failed_count');
             }
         }
@@ -137,6 +139,7 @@ class SendCampaignMessage implements ShouldQueue
             'status' => $messageStatus,
             'is_test' => $mockMode,
             'provider_transaction_id' => $externalId,
+            'error_message' => $errorMessage,
             'sent_at' => $messageStatus === 'sent' ? now() : null,
             'delivered_at' => $deliveryStatus === 'delivered' ? now() : null,
         ]);
