@@ -7,6 +7,7 @@ use App\Models\CampaignContactLog;
 use App\Models\Contact;
 use App\Models\SmsMessage;
 use App\Models\User;
+use App\Services\QuickSmsService;
 use App\Services\TemplateRenderer;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -56,7 +57,7 @@ class SendCampaignMessage implements ShouldQueue
     /**
      * Execute the job.
      */
-    public function handle(TemplateRenderer $templateRenderer): void
+    public function handle(TemplateRenderer $templateRenderer, QuickSmsService $smsService): void
     {
         // Skip if campaign is no longer active
         if (!in_array($this->campaign->status, [Campaign::STATUS_ACTIVE, Campaign::STATUS_SENDING])) {
@@ -110,18 +111,26 @@ class SendCampaignMessage implements ShouldQueue
             $messageStatus = 'sent';
             $deliveryStatus = 'delivered';
         } else {
-            $result = $this->sendSMS($this->contact->phone, $message, $this->campaign->sender, $user);
+            // Check if Unicode is needed
+            $unicode = $smsService->requiresUnicode($message);
+
+            $result = $smsService->sendSMS($this->contact->phone, $message, $this->campaign->sender, $unicode);
 
             if ($result['success']) {
                 $messageStatus = 'sent';
-                $externalId = $result['external_id'] ?? null;
+                $externalId = $result['transaction_id'] ?? null;
                 $deliveryStatus = 'pending';
                 $user->deductBalance($cost);
             } else {
                 $messageStatus = 'failed';
                 $deliveryStatus = 'failed';
-                $errorMessage = $result['error'] ?? 'Unknown error';
+                $errorMessage = $result['error_message'] ?? 'Unknown error';
                 $this->campaign->increment('failed_count');
+                Log::warning("Campaign SMS failed", [
+                    'campaign_id' => $this->campaign->id,
+                    'phone' => $this->contact->phone,
+                    'error' => $errorMessage,
+                ]);
             }
         }
 
@@ -151,55 +160,6 @@ class SendCampaignMessage implements ShouldQueue
             CampaignContactLog::recordSend($this->campaign->id, $this->contact->id);
 
             Log::info("SMS sent to {$this->contact->phone} for campaign {$this->campaign->id}");
-        }
-    }
-
-    /**
-     * Send SMS via QuickSMS
-     */
-    protected function sendSMS(string $phone, string $message, string $sender, User $user): array
-    {
-        try {
-            $login = config('services.quicksms.login');
-            $password = config('services.quicksms.password');
-
-            if (!$login || !$password) {
-                throw new \Exception('QuickSMS credentials not configured');
-            }
-
-            $url = 'https://www.poctgoyercini.com/api_http/sendsms.asp';
-            $params = http_build_query([
-                'user' => $login,
-                'password' => $password,
-                'gsm' => $phone,
-                'text' => $message,
-                'sender' => $sender,
-            ]);
-
-            $response = file_get_contents($url . '?' . $params);
-
-            if ($response && strpos($response, 'OK') === 0) {
-                $parts = explode(':', $response);
-                $externalId = $parts[1] ?? null;
-
-                return [
-                    'success' => true,
-                    'external_id' => $externalId,
-                ];
-            } else {
-                Log::warning("QuickSMS send failed: {$response}");
-                return [
-                    'success' => false,
-                    'error' => $response,
-                ];
-            }
-
-        } catch (\Exception $e) {
-            Log::error("SMS send error: " . $e->getMessage());
-            return [
-                'success' => false,
-                'error' => $e->getMessage(),
-            ];
         }
     }
 
