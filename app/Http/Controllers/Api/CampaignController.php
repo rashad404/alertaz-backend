@@ -766,7 +766,7 @@ class CampaignController extends Controller
         }
 
         // Validate template with a sample contact
-        $sampleContact = $this->queryBuilder->getMatchingContacts($client->id, $campaign->segment_filter, 1)->first();
+        $sampleContact = $this->queryBuilder->getMatches($client->id, $campaign->segment_filter, 1)->first();
         if ($sampleContact) {
             $templateRenderer = app(\App\Services\TemplateRenderer::class);
             try {
@@ -946,7 +946,7 @@ class CampaignController extends Controller
         }
 
         // Get matching contacts
-        $contacts = $this->queryBuilder->getMatchingContacts(
+        $contacts = $this->queryBuilder->getMatches(
             $client->id,
             $campaign->segment_filter,
             $count
@@ -1123,7 +1123,7 @@ class CampaignController extends Controller
                 ->first();
         } else {
             // Use first matching contact
-            $sampleContact = $this->queryBuilder->getMatchingContacts(
+            $sampleContact = $this->queryBuilder->getMatches(
                 $client->id,
                 $campaign->segment_filter,
                 1
