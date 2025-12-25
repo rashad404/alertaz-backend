@@ -149,6 +149,10 @@ class CampaignContactController extends Controller
         $contacts = $query->orderBy('created_at', 'desc')
             ->paginate($perPage);
 
+        // Get last sync date (most recent updated_at)
+        $lastSyncAt = Contact::where('client_id', $client->id)
+            ->max('updated_at');
+
         return response()->json([
             'status' => 'success',
             'data' => [
@@ -159,6 +163,7 @@ class CampaignContactController extends Controller
                     'per_page' => $contacts->perPage(),
                     'total' => $contacts->total(),
                 ],
+                'last_sync_at' => $lastSyncAt,
             ],
         ], 200);
     }
