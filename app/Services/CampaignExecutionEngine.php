@@ -340,6 +340,75 @@ class CampaignExecutionEngine
     }
 
     /**
+     * Get contacts planned for next campaign run (matching - cooldown)
+     *
+     * @param Campaign $campaign
+     * @param int $page
+     * @param int $perPage
+     * @return array
+     */
+    public function getPlannedMessages(Campaign $campaign, int $page = 1, int $perPage = 10): array
+    {
+        $cooldownDays = $campaign->cooldown_days ?? 0;
+
+        // Build query for matching contacts
+        $query = $this->queryBuilder->getMatchesQuery(
+            $campaign->client_id,
+            $campaign->segment_filter
+        );
+
+        // Get contact IDs in cooldown for this campaign
+        $cooldownContactIds = [];
+        if ($cooldownDays > 0) {
+            $cooldownContactIds = \App\Models\CampaignContactLog::where('campaign_id', $campaign->id)
+                ->where('sent_at', '>', now()->subDays($cooldownDays))
+                ->pluck('contact_id')
+                ->toArray();
+        }
+
+        // Exclude contacts in cooldown
+        if (!empty($cooldownContactIds)) {
+            $query->whereNotIn('id', $cooldownContactIds);
+        }
+
+        // Get total count before pagination
+        $totalPlanned = $query->count();
+
+        // Paginate
+        $offset = ($page - 1) * $perPage;
+        $contacts = $query->skip($offset)->take($perPage)->get();
+
+        // Render messages for this page
+        $plannedContacts = [];
+        foreach ($contacts as $contact) {
+            $message = $this->templateRenderer->render(
+                $campaign->message_template,
+                $contact
+            );
+            $message = $this->templateRenderer->sanitizeForSMS($message);
+
+            $plannedContacts[] = [
+                'contact_id' => $contact->id,
+                'phone' => $contact->phone,
+                'message' => $message,
+                'segments' => $this->templateRenderer->calculateSMSSegments($message),
+                'attributes' => $contact->attributes,
+            ];
+        }
+
+        return [
+            'contacts' => $plannedContacts,
+            'pagination' => [
+                'current_page' => $page,
+                'last_page' => (int) ceil($totalPlanned / $perPage),
+                'per_page' => $perPage,
+                'total' => $totalPlanned,
+            ],
+            'next_run_at' => $campaign->next_run_at?->toIso8601String(),
+        ];
+    }
+
+    /**
      * Preview campaign (show sample rendered messages)
      *
      * @param Campaign $campaign

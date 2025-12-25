@@ -594,6 +594,38 @@ class CampaignController extends Controller
     }
 
     /**
+     * Get planned messages for next campaign run (contacts matching filter - cooldown)
+     *
+     * @param Request $request
+     * @param int $id
+     * @return JsonResponse
+     */
+    public function planned(Request $request, int $id): JsonResponse
+    {
+        $client = $request->attributes->get('client');
+        $page = (int) $request->input('page', 1);
+        $perPage = (int) $request->input('per_page', 10);
+
+        $campaign = Campaign::where('client_id', $client->id)
+            ->where('id', $id)
+            ->first();
+
+        if (!$campaign) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Campaign not found',
+            ], 404);
+        }
+
+        $plannedData = $this->executionEngine->getPlannedMessages($campaign, $page, $perPage);
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $plannedData,
+        ], 200);
+    }
+
+    /**
      * Validate campaign
      *
      * @param Request $request

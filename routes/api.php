@@ -178,6 +178,7 @@ Route::middleware('auth.client')->group(function () {
     Route::post('/campaigns/{id}/execute', [CampaignController::class, 'execute']);
     Route::post('/campaigns/{id}/execute-test', [CampaignController::class, 'executeTest']);
     Route::get('/campaigns/{id}/preview', [CampaignController::class, 'preview']);
+    Route::get('/campaigns/{id}/planned', [CampaignController::class, 'planned']);
     Route::post('/campaigns/{id}/validate', [CampaignController::class, 'validate']);
     Route::get('/campaigns/{id}/messages', [CampaignController::class, 'messages']);
     Route::post('/campaigns/{id}/duplicate', [CampaignController::class, 'duplicate']);
