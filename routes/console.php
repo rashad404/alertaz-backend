@@ -66,6 +66,7 @@ use Illuminate\Support\Facades\Schedule;
 //     ->runInBackground();
 
 // Run automated SMS campaigns every minute
-Schedule::command('campaigns:run-automated')->everyMinute()
+Schedule::command('/usr/local/bin/ea-php82 artisan campaigns:run-automated')
+    ->everyMinute()
     ->withoutOverlapping()
     ->runInBackground();
