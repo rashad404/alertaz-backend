@@ -82,7 +82,7 @@ class Campaign extends Model
 
     public function messages(): HasMany
     {
-        return $this->hasMany(CampaignMessage::class);
+        return $this->hasMany(SmsMessage::class);
     }
 
     public function contactLogs(): HasMany
@@ -95,7 +95,7 @@ class Campaign extends Model
 
     public function getSentTodayCountAttribute(): int
     {
-        return $this->messages()
+        return SmsMessage::where('campaign_id', $this->id)
             ->whereDate('created_at', today())
             ->count();
     }
