@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Contact;
+use App\Models\ClientAttributeSchema;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -11,6 +12,70 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class CampaignContactController extends Controller
 {
+    /**
+     * Sanitize contact attributes - validate date fields and set invalid ones to null
+     *
+     * @param int $clientId
+     * @param array $attributes
+     * @return array
+     */
+    protected function sanitizeAttributes(int $clientId, array $attributes): array
+    {
+        // Get date attributes from schema
+        $dateAttributes = ClientAttributeSchema::where('client_id', $clientId)
+            ->where('attribute_type', 'date')
+            ->pluck('attribute_key')
+            ->toArray();
+
+        // Validate each date attribute
+        foreach ($dateAttributes as $key) {
+            if (isset($attributes[$key])) {
+                $value = $attributes[$key];
+
+                // Check if it's a valid date
+                if (!$this->isValidDate($value)) {
+                    $attributes[$key] = null;
+                }
+            }
+        }
+
+        return $attributes;
+    }
+
+    /**
+     * Check if a value is a valid, realistic date
+     *
+     * @param mixed $value
+     * @return bool
+     */
+    protected function isValidDate($value): bool
+    {
+        // Must be a string
+        if (!is_string($value) || empty($value)) {
+            return false;
+        }
+
+        // Try to parse the date
+        $date = \DateTime::createFromFormat('Y-m-d', $value);
+
+        // Check if parsing succeeded and the date matches the input
+        if (!$date || $date->format('Y-m-d') !== $value) {
+            // Try datetime format as well
+            $date = \DateTime::createFromFormat('Y-m-d H:i:s', $value);
+            if (!$date) {
+                return false;
+            }
+        }
+
+        // Check if the year is realistic (between 1900 and 2100)
+        $year = (int) $date->format('Y');
+        if ($year < 1900 || $year > 2100) {
+            return false;
+        }
+
+        return true;
+    }
+
     /**
      * Sync single contact
      *
@@ -36,6 +101,9 @@ class CampaignContactController extends Controller
 
         $phone = $request->input('phone');
         $attributes = $request->input('attributes');
+
+        // Sanitize date attributes
+        $attributes = $this->sanitizeAttributes($client->id, $attributes);
 
         // Find or create contact
         $contact = Contact::updateOrCreate(
@@ -92,13 +160,16 @@ class CampaignContactController extends Controller
 
         foreach ($request->input('contacts') as $contactData) {
             try {
+                // Sanitize date attributes
+                $attributes = $this->sanitizeAttributes($client->id, $contactData['attributes']);
+
                 $contact = Contact::updateOrCreate(
                     [
                         'client_id' => $client->id,
                         'phone' => $contactData['phone'],
                     ],
                     [
-                        'attributes' => $contactData['attributes'],
+                        'attributes' => $attributes,
                     ]
                 );
 
@@ -235,10 +306,13 @@ class CampaignContactController extends Controller
             ], 409);
         }
 
+        // Sanitize date attributes
+        $attributes = $this->sanitizeAttributes($client->id, $request->input('attributes', []));
+
         $contact = Contact::create([
             'client_id' => $client->id,
             'phone' => $phone,
-            'attributes' => $request->input('attributes', []),
+            'attributes' => $attributes,
         ]);
 
         return response()->json([
@@ -304,7 +378,9 @@ class CampaignContactController extends Controller
         }
 
         if ($request->has('attributes')) {
-            $contact->attributes = $request->input('attributes');
+            // Sanitize date attributes
+            $attributes = $this->sanitizeAttributes($client->id, $request->input('attributes'));
+            $contact->attributes = $attributes;
         }
 
         $contact->save();

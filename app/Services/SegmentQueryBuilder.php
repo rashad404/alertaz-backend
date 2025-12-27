@@ -56,11 +56,13 @@ class SegmentQueryBuilder
         // JSON path for attributes
         $jsonPath = "attributes->{$key}";
 
-        // For most operators (except is_not_set), ensure the attribute exists
+        // For most operators (except is_not_set), ensure the attribute exists and is not JSON null
         // This makes filtering by hosting_expiry only return contacts with hosting
         $operatorsWithoutExistCheck = ['is_not_set', 'is_empty'];
         if (!in_array($operator, $operatorsWithoutExistCheck)) {
             $query->whereNotNull(DB::raw("JSON_EXTRACT(`attributes`, '$.{$key}')"), $boolean);
+            // Also exclude JSON null values (where key exists but value is null)
+            $query->whereRaw("JSON_TYPE(JSON_EXTRACT(`attributes`, '$.{$key}')) != 'NULL'", [], $boolean);
         }
 
         match ($operator) {
