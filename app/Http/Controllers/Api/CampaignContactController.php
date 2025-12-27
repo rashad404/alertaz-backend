@@ -261,6 +261,12 @@ class CampaignContactController extends Controller
         $lastSyncAt = Contact::where('client_id', $client->id)
             ->max('updated_at');
 
+        // Convert to ISO 8601 format with UTC timezone indicator
+        // This ensures JavaScript interprets it correctly as UTC
+        $lastSyncAtFormatted = $lastSyncAt
+            ? \Carbon\Carbon::parse($lastSyncAt)->toIso8601String()
+            : null;
+
         return response()->json([
             'status' => 'success',
             'data' => [
@@ -271,7 +277,7 @@ class CampaignContactController extends Controller
                     'per_page' => $contacts->perPage(),
                     'total' => $contacts->total(),
                 ],
-                'last_sync_at' => $lastSyncAt,
+                'last_sync_at' => $lastSyncAtFormatted,
             ],
         ], 200);
     }
