@@ -32,6 +32,8 @@ class Campaign extends Model
         'check_interval_minutes',
         'cooldown_days',
         'ends_at',
+        'run_start_hour',
+        'run_end_hour',
         'last_run_at',
         'next_run_at',
         'run_count',
@@ -200,7 +202,7 @@ class Campaign extends Model
     {
         $this->update([
             'status' => self::STATUS_ACTIVE,
-            'next_run_at' => now(),
+            'next_run_at' => $this->calculateNextRunTime(now()),
             // Reset warning flags on reactivation
             'balance_warning_20_sent' => false,
             'balance_warning_10_sent' => false,
@@ -239,9 +241,12 @@ class Campaign extends Model
     public function scheduleNextRun(): void
     {
         if ($this->check_interval_minutes) {
+            $baseNextRun = now()->addMinutes($this->check_interval_minutes);
+            $nextRun = $this->calculateNextRunTime($baseNextRun);
+
             $this->update([
                 'last_run_at' => now(),
-                'next_run_at' => now()->addMinutes($this->check_interval_minutes),
+                'next_run_at' => $nextRun,
                 'run_count' => $this->run_count + 1,
             ]);
         }
@@ -250,6 +255,51 @@ class Campaign extends Model
     public function hasEnded(): bool
     {
         return $this->ends_at && $this->ends_at->isPast();
+    }
+
+    /**
+     * Check if a given hour is within the run window
+     *
+     * @param int $hour 0-23
+     * @return bool
+     */
+    public function isWithinRunWindow(int $hour): bool
+    {
+        // If no window set, always within window
+        if ($this->run_start_hour === null || $this->run_end_hour === null) {
+            return true;
+        }
+
+        return $hour >= $this->run_start_hour && $hour < $this->run_end_hour;
+    }
+
+    /**
+     * Calculate the next run time, ensuring it falls within the run window
+     *
+     * @param \Carbon\Carbon|null $baseTime Base time to calculate from (defaults to now)
+     * @return \Carbon\Carbon
+     */
+    public function calculateNextRunTime(?\Carbon\Carbon $baseTime = null): \Carbon\Carbon
+    {
+        $nextRun = $baseTime ?? now();
+
+        // If no window set, return as-is
+        if ($this->run_start_hour === null || $this->run_end_hour === null) {
+            return $nextRun;
+        }
+
+        // If current time is within window, return as-is
+        if ($this->isWithinRunWindow($nextRun->hour)) {
+            return $nextRun;
+        }
+
+        // If before start hour, schedule for today's start hour
+        if ($nextRun->hour < $this->run_start_hour) {
+            return $nextRun->copy()->setTime($this->run_start_hour, 0, 0);
+        }
+
+        // If after end hour (or equal), schedule for tomorrow's start hour
+        return $nextRun->copy()->addDay()->setTime($this->run_start_hour, 0, 0);
     }
 
     /**

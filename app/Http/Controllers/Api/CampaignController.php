@@ -139,6 +139,8 @@ class CampaignController extends Controller
             'check_interval_minutes' => ['nullable', 'integer', 'min:1', 'max:10080'], // max 1 week
             'cooldown_days' => ['nullable', 'integer', 'min:1', 'max:365'],
             'ends_at' => ['nullable', 'date', 'after:now'],
+            'run_start_hour' => ['nullable', 'integer', 'min:0', 'max:23'],
+            'run_end_hour' => ['nullable', 'integer', 'min:0', 'max:23'],
         ]);
 
         if ($validator->fails()) {
@@ -198,6 +200,8 @@ class CampaignController extends Controller
             'check_interval_minutes' => $isAutomated ? $request->input('check_interval_minutes') : null,
             'cooldown_days' => $request->input('cooldown_days', 30),
             'ends_at' => $isAutomated ? $request->input('ends_at') : null,
+            'run_start_hour' => $isAutomated ? $request->input('run_start_hour') : null,
+            'run_end_hour' => $isAutomated ? $request->input('run_end_hour') : null,
             'segment_filter' => $segmentFilter,
             'scheduled_at' => !$isAutomated ? $request->input('scheduled_at') : null,
             'target_count' => $targetCount,
@@ -259,6 +263,8 @@ class CampaignController extends Controller
             'check_interval_minutes' => ['nullable', 'integer', 'min:1', 'max:10080'],
             'cooldown_days' => ['nullable', 'integer', 'min:1', 'max:365'],
             'ends_at' => ['nullable', 'date', 'after:now'],
+            'run_start_hour' => ['nullable', 'integer', 'min:0', 'max:23'],
+            'run_end_hour' => ['nullable', 'integer', 'min:0', 'max:23'],
         ]);
 
         if ($validator->fails()) {
@@ -325,6 +331,14 @@ class CampaignController extends Controller
 
             if ($request->has('ends_at')) {
                 $campaign->ends_at = $request->input('ends_at');
+            }
+
+            if ($request->has('run_start_hour')) {
+                $campaign->run_start_hour = $request->input('run_start_hour');
+            }
+
+            if ($request->has('run_end_hour')) {
+                $campaign->run_end_hour = $request->input('run_end_hour');
             }
         }
 
