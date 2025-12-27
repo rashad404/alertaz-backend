@@ -114,11 +114,15 @@ class SegmentQueryBuilder
 
             // Array conditions
             'count' => $this->applyArrayCount($query, $jsonPath, $value, $boolean),
+            'not_empty' => $this->applyArrayNotEmpty($query, $jsonPath, $boolean),
+            'is_empty' => $this->applyArrayIsEmpty($query, $jsonPath, $boolean),
+            'any_expiry_within' => $this->applyArrayAnyExpiryWithin($query, $jsonPath, $value, $boolean),
+            'any_expiry_expired_since' => $this->applyArrayAnyExpiryExpiredSince($query, $jsonPath, $value, $boolean),
+            'any_expiry_today' => $this->applyArrayAnyExpiryToday($query, $jsonPath, $boolean),
             'any' => $this->applyArrayAny($query, $jsonPath, $value, $boolean),
             'all' => $this->applyArrayAll($query, $jsonPath, $value, $boolean),
             'none' => $this->applyArrayNone($query, $jsonPath, $value, $boolean),
             'exists' => $this->applyArrayExists($query, $jsonPath, $value, $boolean),
-            'is_empty' => $this->applyArrayIsEmpty($query, $jsonPath, $boolean),
 
             default => null
         };
@@ -441,6 +445,105 @@ class SegmentQueryBuilder
         $query->whereRaw(
             "JSON_LENGTH(JSON_EXTRACT(`attributes`, '$.{$this->extractKey($jsonPath)}')) = 0 OR JSON_EXTRACT(`attributes`, '$.{$this->extractKey($jsonPath)}') IS NULL",
             [],
+            $boolean
+        );
+    }
+
+    protected function applyArrayNotEmpty(Builder $query, string $jsonPath, string $boolean): void
+    {
+        $query->whereRaw(
+            "JSON_LENGTH(JSON_EXTRACT(`attributes`, '$.{$this->extractKey($jsonPath)}')) > 0",
+            [],
+            $boolean
+        );
+    }
+
+    /**
+     * Check if any item in array of objects has expiry within X days from now
+     * Works with arrays like: [{name: "example.com", expiry: "2025-01-15"}, ...]
+     */
+    protected function applyArrayAnyExpiryWithin(Builder $query, string $jsonPath, $value, string $boolean): void
+    {
+        if (is_array($value) && isset($value['days'])) {
+            $days = (int) $value['days'];
+        } elseif (is_numeric($value)) {
+            $days = (int) $value;
+        } else {
+            return;
+        }
+
+        $key = $this->extractKey($jsonPath);
+        $today = now()->format('Y-m-d');
+        $targetDate = now()->addDays($days)->format('Y-m-d');
+
+        // Use JSON_TABLE to check if any item's expiry is between today and target date
+        // This works on MySQL 8.0+
+        $query->whereRaw(
+            "EXISTS (
+                SELECT 1 FROM JSON_TABLE(
+                    JSON_EXTRACT(`attributes`, '$.{$key}'),
+                    '\$[*]' COLUMNS (
+                        expiry VARCHAR(20) PATH '\$.expiry'
+                    )
+                ) AS jt
+                WHERE jt.expiry BETWEEN ? AND ?
+            )",
+            [$today, $targetDate],
+            $boolean
+        );
+    }
+
+    /**
+     * Check if any item in array of objects has expiry that expired in the last X days
+     */
+    protected function applyArrayAnyExpiryExpiredSince(Builder $query, string $jsonPath, $value, string $boolean): void
+    {
+        if (is_array($value) && isset($value['days'])) {
+            $days = (int) $value['days'];
+        } elseif (is_numeric($value)) {
+            $days = (int) $value;
+        } else {
+            return;
+        }
+
+        $key = $this->extractKey($jsonPath);
+        $today = now()->format('Y-m-d');
+        $pastDate = now()->subDays($days)->format('Y-m-d');
+
+        $query->whereRaw(
+            "EXISTS (
+                SELECT 1 FROM JSON_TABLE(
+                    JSON_EXTRACT(`attributes`, '$.{$key}'),
+                    '\$[*]' COLUMNS (
+                        expiry VARCHAR(20) PATH '\$.expiry'
+                    )
+                ) AS jt
+                WHERE jt.expiry BETWEEN ? AND ?
+            )",
+            [$pastDate, $today],
+            $boolean
+        );
+    }
+
+    /**
+     * Check if any item in array of objects has expiry today
+     */
+    protected function applyArrayAnyExpiryToday(Builder $query, string $jsonPath, string $boolean): void
+    {
+        $key = $this->extractKey($jsonPath);
+        $today = now()->format('Y-m-d');
+
+        $query->whereRaw(
+            "EXISTS (
+                SELECT 1 FROM JSON_TABLE(
+                    JSON_EXTRACT(`attributes`, '$.{$key}'),
+                    '\$[*]' COLUMNS (
+                        expiry VARCHAR(20) PATH '\$.expiry'
+                    )
+                ) AS jt
+                WHERE jt.expiry = ?
+            )",
+            [$today],
             $boolean
         );
     }

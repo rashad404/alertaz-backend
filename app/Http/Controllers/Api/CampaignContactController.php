@@ -39,6 +39,43 @@ class CampaignContactController extends Controller
             }
         }
 
+        // Get array attributes with object items that have date properties
+        $arrayAttributes = ClientAttributeSchema::where('client_id', $clientId)
+            ->where('attribute_type', 'array')
+            ->where('item_type', 'object')
+            ->get();
+
+        // Validate dates inside array of objects
+        foreach ($arrayAttributes as $arrayAttr) {
+            $key = $arrayAttr->attribute_key;
+            $properties = $arrayAttr->properties ?? [];
+
+            if (!isset($attributes[$key]) || !is_array($attributes[$key])) {
+                continue;
+            }
+
+            // Find date properties in this array's item schema
+            $dateProperties = [];
+            foreach ($properties as $propKey => $propType) {
+                if ($propType === 'date') {
+                    $dateProperties[] = $propKey;
+                }
+            }
+
+            // Validate each item in the array
+            foreach ($attributes[$key] as $idx => $item) {
+                if (!is_array($item)) {
+                    continue;
+                }
+
+                foreach ($dateProperties as $dateProp) {
+                    if (isset($item[$dateProp]) && !$this->isValidDate($item[$dateProp])) {
+                        $attributes[$key][$idx][$dateProp] = null;
+                    }
+                }
+            }
+        }
+
         return $attributes;
     }
 
