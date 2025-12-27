@@ -56,6 +56,24 @@ class SegmentQueryBuilder
         // JSON path for attributes
         $jsonPath = "attributes->{$key}";
 
+        // For OR logic, wrap the entire condition (including existence checks) in a group
+        // This ensures: (attr1 exists AND condition1) OR (attr2 exists AND condition2)
+        // Instead of: attr1 exists OR condition1 OR attr2 exists OR condition2
+        if ($boolean === 'or') {
+            $query->where(function ($subQuery) use ($key, $operator, $value, $jsonPath) {
+                $this->applyConditionInner($subQuery, $key, $operator, $value, $jsonPath, 'and');
+            }, null, null, 'or');
+            return;
+        }
+
+        $this->applyConditionInner($query, $key, $operator, $value, $jsonPath, $boolean);
+    }
+
+    /**
+     * Inner method that applies the actual condition logic
+     */
+    protected function applyConditionInner(Builder $query, string $key, string $operator, $value, string $jsonPath, string $boolean): void
+    {
         // For most operators (except is_not_set), ensure the attribute exists and is not JSON null
         // This makes filtering by hosting_expiry only return contacts with hosting
         $operatorsWithoutExistCheck = ['is_not_set', 'is_empty'];
