@@ -116,7 +116,9 @@ class SegmentQueryBuilder
             'count' => $this->applyArrayCount($query, $jsonPath, $value, $boolean),
             'not_empty' => $this->applyArrayNotEmpty($query, $jsonPath, $boolean),
             'is_empty' => $this->applyArrayIsEmpty($query, $jsonPath, $boolean),
+            'any_expiry_in_days' => $this->applyArrayAnyExpiryInDays($query, $jsonPath, $value, $boolean),
             'any_expiry_within' => $this->applyArrayAnyExpiryWithin($query, $jsonPath, $value, $boolean),
+            'any_expiry_after' => $this->applyArrayAnyExpiryAfter($query, $jsonPath, $value, $boolean),
             'any_expiry_expired_since' => $this->applyArrayAnyExpiryExpiredSince($query, $jsonPath, $value, $boolean),
             'any_expiry_today' => $this->applyArrayAnyExpiryToday($query, $jsonPath, $boolean),
             'any' => $this->applyArrayAny($query, $jsonPath, $value, $boolean),
@@ -476,19 +478,87 @@ class SegmentQueryBuilder
         $today = now()->format('Y-m-d');
         $targetDate = now()->addDays($days)->format('Y-m-d');
 
-        // Use JSON_TABLE to check if any item's expiry is between today and target date
-        // This works on MySQL 8.0+
+        // Use JSON_TABLE with IN subquery (EXISTS doesn't work well with JSON_TABLE in MySQL)
         $query->whereRaw(
-            "EXISTS (
-                SELECT 1 FROM JSON_TABLE(
-                    JSON_EXTRACT(`attributes`, '$.{$key}'),
-                    '\$[*]' COLUMNS (
+            "`contacts`.`id` IN (
+                SELECT c.id FROM `contacts` c,
+                JSON_TABLE(
+                    c.`attributes`,
+                    '\$.{$key}[*]' COLUMNS (
                         expiry VARCHAR(20) PATH '\$.expiry'
                     )
                 ) AS jt
                 WHERE jt.expiry BETWEEN ? AND ?
             )",
             [$today, $targetDate],
+            $boolean
+        );
+    }
+
+    /**
+     * Check if any item in array of objects has expiry on exactly X days from now
+     * For example: 3 days means expiry = today + 3 days
+     */
+    protected function applyArrayAnyExpiryInDays(Builder $query, string $jsonPath, $value, string $boolean): void
+    {
+        if (is_array($value) && isset($value['days'])) {
+            $days = (int) $value['days'];
+        } elseif (is_numeric($value)) {
+            $days = (int) $value;
+        } else {
+            return;
+        }
+
+        $key = $this->extractKey($jsonPath);
+        $targetDate = now()->addDays($days)->format('Y-m-d');
+
+        // Find contacts where any item's expiry is exactly on the target date
+        $query->whereRaw(
+            "`contacts`.`id` IN (
+                SELECT c.id FROM `contacts` c,
+                JSON_TABLE(
+                    c.`attributes`,
+                    '\$.{$key}[*]' COLUMNS (
+                        expiry VARCHAR(20) PATH '\$.expiry'
+                    )
+                ) AS jt
+                WHERE DATE(jt.expiry) = ?
+            )",
+            [$targetDate],
+            $boolean
+        );
+    }
+
+    /**
+     * Check if any item in array of objects has expiry after X days from now
+     * (expires more than X days from now)
+     */
+    protected function applyArrayAnyExpiryAfter(Builder $query, string $jsonPath, $value, string $boolean): void
+    {
+        if (is_array($value) && isset($value['days'])) {
+            $days = (int) $value['days'];
+        } elseif (is_numeric($value)) {
+            $days = (int) $value;
+        } else {
+            return;
+        }
+
+        $key = $this->extractKey($jsonPath);
+        $targetDate = now()->addDays($days)->format('Y-m-d');
+
+        // Find contacts where any item's expiry is after the target date
+        $query->whereRaw(
+            "`contacts`.`id` IN (
+                SELECT c.id FROM `contacts` c,
+                JSON_TABLE(
+                    c.`attributes`,
+                    '\$.{$key}[*]' COLUMNS (
+                        expiry VARCHAR(20) PATH '\$.expiry'
+                    )
+                ) AS jt
+                WHERE jt.expiry > ?
+            )",
+            [$targetDate],
             $boolean
         );
     }
@@ -511,10 +581,11 @@ class SegmentQueryBuilder
         $pastDate = now()->subDays($days)->format('Y-m-d');
 
         $query->whereRaw(
-            "EXISTS (
-                SELECT 1 FROM JSON_TABLE(
-                    JSON_EXTRACT(`attributes`, '$.{$key}'),
-                    '\$[*]' COLUMNS (
+            "`contacts`.`id` IN (
+                SELECT c.id FROM `contacts` c,
+                JSON_TABLE(
+                    c.`attributes`,
+                    '\$.{$key}[*]' COLUMNS (
                         expiry VARCHAR(20) PATH '\$.expiry'
                     )
                 ) AS jt
@@ -534,10 +605,11 @@ class SegmentQueryBuilder
         $today = now()->format('Y-m-d');
 
         $query->whereRaw(
-            "EXISTS (
-                SELECT 1 FROM JSON_TABLE(
-                    JSON_EXTRACT(`attributes`, '$.{$key}'),
-                    '\$[*]' COLUMNS (
+            "`contacts`.`id` IN (
+                SELECT c.id FROM `contacts` c,
+                JSON_TABLE(
+                    c.`attributes`,
+                    '\$.{$key}[*]' COLUMNS (
                         expiry VARCHAR(20) PATH '\$.expiry'
                     )
                 ) AS jt

@@ -59,7 +59,7 @@ class ClientAttributeSchema extends Model
             ],
             'array' => [
                 'count', 'not_empty', 'is_empty',
-                'any_expiry_within', 'any_expiry_expired_since', 'any_expiry_today',
+                'any_expiry_in_days', 'any_expiry_within', 'any_expiry_after', 'any_expiry_expired_since', 'any_expiry_today',
                 'any', 'all', 'none', 'exists'
             ],
             default => []
