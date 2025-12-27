@@ -333,12 +333,25 @@ class CampaignController extends Controller
                 $campaign->ends_at = $request->input('ends_at');
             }
 
+            $runHoursChanged = false;
+
             if ($request->has('run_start_hour')) {
+                if ($campaign->run_start_hour !== $request->input('run_start_hour')) {
+                    $runHoursChanged = true;
+                }
                 $campaign->run_start_hour = $request->input('run_start_hour');
             }
 
             if ($request->has('run_end_hour')) {
+                if ($campaign->run_end_hour !== $request->input('run_end_hour')) {
+                    $runHoursChanged = true;
+                }
                 $campaign->run_end_hour = $request->input('run_end_hour');
+            }
+
+            // Recalculate next_run_at if run hours changed and campaign is active
+            if ($runHoursChanged && $campaign->status === Campaign::STATUS_ACTIVE) {
+                $campaign->next_run_at = $campaign->calculateNextRunTime(now());
             }
         }
 
