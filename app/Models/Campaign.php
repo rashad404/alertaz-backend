@@ -200,9 +200,20 @@ class Campaign extends Model
 
     public function activate(): void
     {
+        $nextRunAt = $this->calculateNextRunTime(now());
+
+        \Log::info('Campaign activate', [
+            'campaign_id' => $this->id,
+            'run_start_hour' => $this->run_start_hour,
+            'run_end_hour' => $this->run_end_hour,
+            'current_time' => now()->toDateTimeString(),
+            'current_hour' => now()->hour,
+            'calculated_next_run_at' => $nextRunAt->toDateTimeString(),
+        ]);
+
         $this->update([
             'status' => self::STATUS_ACTIVE,
-            'next_run_at' => $this->calculateNextRunTime(now()),
+            'next_run_at' => $nextRunAt,
             // Reset warning flags on reactivation
             'balance_warning_20_sent' => false,
             'balance_warning_10_sent' => false,

@@ -65,7 +65,7 @@ return [
     |
     */
 
-    'timezone' => 'Asia/Baku',
+    'timezone' => 'UTC',
     'locales' => ['az'],
 
     /*
