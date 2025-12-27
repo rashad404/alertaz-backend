@@ -83,12 +83,19 @@ class SegmentQueryBuilder
             'less_than_or_equal' => $this->applyLessThanOrEqual($query, $jsonPath, $value, $boolean),
             'between' => $this->applyBetween($query, $jsonPath, $value, $boolean),
 
-            // Date conditions (days from now)
+            // Date conditions (days from now - future)
             'expires_in_days_eq' => $this->applyExpiresInDays($query, $jsonPath, $value, '=', $boolean),
             'expires_in_days_gt' => $this->applyExpiresInDays($query, $jsonPath, $value, '>', $boolean),
             'expires_in_days_gte' => $this->applyExpiresInDays($query, $jsonPath, $value, '>=', $boolean),
             'expires_in_days_lt' => $this->applyExpiresInDays($query, $jsonPath, $value, '<', $boolean),
             'expires_in_days_lte' => $this->applyExpiresInDays($query, $jsonPath, $value, '<=', $boolean),
+
+            // Date conditions (days ago - past)
+            'days_ago_eq' => $this->applyDaysAgo($query, $jsonPath, $value, '=', $boolean),
+            'days_ago_gt' => $this->applyDaysAgo($query, $jsonPath, $value, '<', $boolean),  // > days ago means date < target
+            'days_ago_gte' => $this->applyDaysAgo($query, $jsonPath, $value, '<=', $boolean),
+            'days_ago_lt' => $this->applyDaysAgo($query, $jsonPath, $value, '>', $boolean),  // < days ago means date > target
+            'days_ago_lte' => $this->applyDaysAgo($query, $jsonPath, $value, '>=', $boolean),
 
             // Legacy date conditions
             'expires_within' => $this->applyExpiresWithin($query, $jsonPath, $value, $boolean),
@@ -212,6 +219,29 @@ class SegmentQueryBuilder
         }
 
         $targetDate = now()->addDays($days)->format('Y-m-d');
+
+        $query->whereRaw(
+            "DATE(JSON_UNQUOTE(JSON_EXTRACT(`attributes`, '$.{$this->extractKey($jsonPath)}'))) {$operator} ?",
+            [$targetDate],
+            $boolean
+        );
+    }
+
+    /**
+     * Apply date comparison based on days ago
+     * Compares the date attribute to (today - X days)
+     */
+    protected function applyDaysAgo(Builder $query, string $jsonPath, $value, string $operator, string $boolean): void
+    {
+        if (is_array($value) && isset($value['days'])) {
+            $days = (int) $value['days'];
+        } elseif (is_numeric($value)) {
+            $days = (int) $value;
+        } else {
+            return;
+        }
+
+        $targetDate = now()->subDays($days)->format('Y-m-d');
 
         $query->whereRaw(
             "DATE(JSON_UNQUOTE(JSON_EXTRACT(`attributes`, '$.{$this->extractKey($jsonPath)}'))) {$operator} ?",
