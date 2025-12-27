@@ -90,6 +90,16 @@ class Campaign extends Model
         return $this->hasMany(CampaignContactLog::class);
     }
 
+    // Accessors
+    protected $appends = ['sent_today_count'];
+
+    public function getSentTodayCountAttribute(): int
+    {
+        return $this->messages()
+            ->whereDate('created_at', today())
+            ->count();
+    }
+
     // Scopes
     public function scopeForClient($query, int $clientId)
     {
