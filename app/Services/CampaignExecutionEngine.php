@@ -410,6 +410,7 @@ class CampaignExecutionEngine
 
     /**
      * Preview campaign (show sample rendered messages)
+     * Returns planned count (matching - cooldown) to show actual recipients
      *
      * @param Campaign $campaign
      * @param int $limit
@@ -417,17 +418,33 @@ class CampaignExecutionEngine
      */
     public function previewMessages(Campaign $campaign, int $limit = 5): array
     {
-        // Get fresh total count
-        $totalCount = $this->queryBuilder->countMatches(
+        $cooldownDays = $campaign->cooldown_days ?? 0;
+
+        // Build query for matching contacts
+        $query = $this->queryBuilder->getMatchesQuery(
             $campaign->client_id,
             $campaign->segment_filter
         );
 
-        $contacts = $this->queryBuilder->getMatches(
-            $campaign->client_id,
-            $campaign->segment_filter,
-            $limit
-        );
+        // Get contact IDs in cooldown for this campaign
+        $cooldownContactIds = [];
+        if ($cooldownDays > 0) {
+            $cooldownContactIds = \App\Models\CampaignContactLog::where('campaign_id', $campaign->id)
+                ->where('sent_at', '>', now()->subDays($cooldownDays))
+                ->pluck('contact_id')
+                ->toArray();
+        }
+
+        // Exclude contacts in cooldown
+        if (!empty($cooldownContactIds)) {
+            $query->whereNotIn('id', $cooldownContactIds);
+        }
+
+        // Get total planned count (matching - cooldown)
+        $totalCount = $query->count();
+
+        // Get sample contacts for preview
+        $contacts = $query->limit($limit)->get();
 
         $previews = [];
 
