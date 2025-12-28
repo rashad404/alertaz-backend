@@ -223,6 +223,57 @@ class AuthController extends Controller
     }
 
     /**
+     * Verify phone for authenticated user.
+     * Updates the current user's phone and marks it as verified.
+     */
+    public function verifyPhoneForUser(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'phone' => 'required|string|regex:/^(\+994)?[0-9]{9,12}$/',
+            'code' => 'required|string|min:4|max:6',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $phone = $request->phone;
+        if (!str_starts_with($phone, '+')) {
+            $phone = '+994' . ltrim($phone, '0');
+        }
+
+        $result = $this->verificationService->verifyCode($phone, $request->code, 'sms');
+
+        if (!$result['success']) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $result['message'],
+            ], 400);
+        }
+
+        // Update the authenticated user's phone
+        $user = $request->user();
+        $user->update([
+            'phone' => $phone,
+            'phone_verified_at' => now(),
+        ]);
+        $user->refresh();
+        $user->available_notification_channels = $user->getAvailableNotificationChannels();
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Phone verified successfully',
+            'data' => [
+                'user' => $user,
+            ]
+        ]);
+    }
+
+    /**
      * Send email verification code.
      */
     public function sendEmailVerification(Request $request)
