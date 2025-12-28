@@ -72,7 +72,7 @@ return [
         'login' => env('QUICKSMS_LOGIN'),
         'password' => env('QUICKSMS_PASSWORD'),
         'base_url' => env('QUICKSMS_BASE_URL', 'https://apps.lsim.az/quicksms/v1'),
-        'test_mode' => env('SMS_CAMPAIGN_TEST_MODE', false),
+        'test_mode' => env('SMS_TEST_MODE', true),
     ],
 
 ];

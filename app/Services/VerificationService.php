@@ -11,22 +11,27 @@ use Illuminate\Support\Str;
 
 class VerificationService
 {
-    /**
-     * Check if we're in local/development mode
-     */
-    private function isLocalMode(): bool
+    private QuickSmsService $quickSmsService;
+
+    public function __construct(QuickSmsService $quickSmsService)
     {
-        return app()->environment('local', 'development') ||
-               config('app.verification_mock', false) ||
-               env('VERIFICATION_MOCK_MODE', false);
+        $this->quickSmsService = $quickSmsService;
     }
 
     /**
-     * Get the mock verification code for local testing
+     * Check if SMS test mode is enabled
+     */
+    private function isTestMode(): bool
+    {
+        return env('SMS_TEST_MODE', true);
+    }
+
+    /**
+     * Get the mock verification code for testing
      */
     private function getMockCode(): string
     {
-        return config('app.mock_verification_code', '123456');
+        return env('SMS_MOCK_CODE', '123456');
     }
 
     /**
@@ -35,8 +40,8 @@ class VerificationService
     public function sendSMSVerification(string $phone, ?User $user = null): array
     {
         try {
-            // Generate code
-            $code = $this->isLocalMode() ? $this->getMockCode() : $this->generateCode();
+            // Generate code - use mock code in test mode, random code in production
+            $code = $this->isTestMode() ? $this->getMockCode() : $this->generateCode();
 
             // Store verification record
             $verification = OtpVerification::create([
@@ -51,28 +56,33 @@ class VerificationService
                 'user_agent' => request()->userAgent(),
             ]);
 
-            // In local mode, just log the code
-            if ($this->isLocalMode()) {
-                Log::info("📱 [LOCAL MODE] SMS Verification Code for {$phone}: {$code}");
+            // In test mode, just log the code (no real SMS)
+            if ($this->isTestMode()) {
+                Log::info("📱 [TEST MODE] SMS Verification Code for {$phone}: {$code}");
 
                 return [
                     'success' => true,
-                    'message' => 'Verification code sent successfully (LOCAL MODE: use ' . $code . ')',
-                    'expires_in' => 600, // 10 minutes in seconds
-                    'debug' => app()->environment('local') ? [
+                    'message' => 'Verification code sent successfully',
+                    'expires_in' => 600,
+                    'debug' => [
                         'code' => $code,
                         'phone' => $phone,
-                        'mode' => 'mock',
-                    ] : null,
+                        'mode' => 'test',
+                    ],
                 ];
             }
 
-            // Production mode - send actual SMS
-            $sent = $this->sendActualSMS($phone, $code);
+            // Production mode - send actual SMS via QuickSMS
+            $message = "Your Alert.az verification code is: {$code}. Valid for 10 minutes.";
+            $result = $this->quickSmsService->sendSMS($phone, $message, 'Alert.az');
 
-            if (!$sent) {
-                throw new \Exception('Failed to send SMS');
+            if (!$result['success']) {
+                throw new \Exception($result['error_message'] ?? 'Failed to send SMS');
             }
+
+            Log::info("📱 SMS Verification sent to {$phone}", [
+                'transaction_id' => $result['transaction_id'] ?? null,
+            ]);
 
             return [
                 'success' => true,
@@ -97,8 +107,8 @@ class VerificationService
     public function sendEmailVerification(string $email, ?User $user = null): array
     {
         try {
-            // Generate code
-            $code = $this->isLocalMode() ? $this->getMockCode() : $this->generateCode();
+            // Generate code - use mock code in test mode, random code in production
+            $code = $this->isTestMode() ? $this->getMockCode() : $this->generateCode();
 
             // Store verification record
             $verification = OtpVerification::create([
@@ -113,19 +123,19 @@ class VerificationService
                 'user_agent' => request()->userAgent(),
             ]);
 
-            // In local mode, just log the code
-            if ($this->isLocalMode()) {
-                Log::info("📧 [LOCAL MODE] Email Verification Code for {$email}: {$code}");
+            // In test mode, just log the code (no real email)
+            if ($this->isTestMode()) {
+                Log::info("📧 [TEST MODE] Email Verification Code for {$email}: {$code}");
 
                 return [
                     'success' => true,
-                    'message' => 'Verification code sent successfully (LOCAL MODE: use ' . $code . ')',
-                    'expires_in' => 900, // 15 minutes in seconds
-                    'debug' => app()->environment('local') ? [
+                    'message' => 'Verification code sent successfully',
+                    'expires_in' => 900,
+                    'debug' => [
                         'code' => $code,
                         'email' => $email,
-                        'mode' => 'mock',
-                    ] : null,
+                        'mode' => 'test',
+                    ],
                 ];
             }
 
@@ -159,9 +169,9 @@ class VerificationService
     public function verifyCode(string $identifier, string $code, string $type = 'sms'): array
     {
         try {
-            // In local mode, always accept the mock code
-            if ($this->isLocalMode() && $code === $this->getMockCode()) {
-                Log::info("[LOCAL MODE] Auto-accepting mock verification code {$code} for {$identifier}");
+            // In test mode, always accept the mock code
+            if ($this->isTestMode() && $code === $this->getMockCode()) {
+                Log::info("[TEST MODE] Auto-accepting mock verification code {$code} for {$identifier}");
 
                 // Clean up any existing verifications for this identifier
                 if ($type === 'sms') {
@@ -172,11 +182,11 @@ class VerificationService
 
                 return [
                     'success' => true,
-                    'message' => 'Verification successful (LOCAL MODE)',
-                    'debug' => app()->environment('local') ? [
-                        'mode' => 'mock',
+                    'message' => 'Verification successful',
+                    'debug' => [
+                        'mode' => 'test',
                         'accepted_code' => $code,
-                    ] : null,
+                    ],
                 ];
             }
 
@@ -245,7 +255,7 @@ class VerificationService
             ->where('created_at', '>', now()->subMinute())
             ->exists();
 
-        if ($recentAttempt && !$this->isLocalMode()) {
+        if ($recentAttempt && !$this->isTestMode()) {
             return [
                 'success' => false,
                 'message' => 'Please wait before requesting another code',
@@ -273,94 +283,6 @@ class VerificationService
     private function generateCode(): string
     {
         return (string) rand(100000, 999999); // 6-digit code
-    }
-
-    /**
-     * Send actual SMS (production)
-     */
-    private function sendActualSMS(string $phone, string $code): bool
-    {
-        try {
-            $provider = config('services.sms.provider', 'twilio');
-            $message = "Your Alert.az verification code is: {$code}. Valid for 10 minutes.";
-
-            switch ($provider) {
-                case 'twilio':
-                    return $this->sendViaTwilio($phone, $message);
-                case 'nexmo':
-                    return $this->sendViaNexmo($phone, $message);
-                case 'azercell':
-                    return $this->sendViaAzercell($phone, $message);
-                default:
-                    Log::warning('No SMS provider configured, unable to send verification');
-                    return false;
-            }
-        } catch (\Exception $e) {
-            Log::error('SMS sending failed: ' . $e->getMessage());
-            return false;
-        }
-    }
-
-    /**
-     * Send SMS via Twilio
-     */
-    private function sendViaTwilio(string $phone, string $message): bool
-    {
-        $sid = env('TWILIO_SID');
-        $token = env('TWILIO_TOKEN');
-        $from = env('TWILIO_FROM');
-
-        if (!$sid || !$token || !$from) {
-            return false;
-        }
-
-        $response = Http::withBasicAuth($sid, $token)
-            ->asForm()
-            ->post("https://api.twilio.com/2010-04-01/Accounts/{$sid}/Messages.json", [
-                'From' => $from,
-                'To' => $this->formatPhone($phone),
-                'Body' => $message,
-            ]);
-
-        return $response->successful();
-    }
-
-    /**
-     * Send SMS via Nexmo
-     */
-    private function sendViaNexmo(string $phone, string $message): bool
-    {
-        $key = env('NEXMO_KEY');
-        $secret = env('NEXMO_SECRET');
-
-        if (!$key || !$secret) {
-            return false;
-        }
-
-        $response = Http::post('https://rest.nexmo.com/sms/json', [
-            'api_key' => $key,
-            'api_secret' => $secret,
-            'from' => 'Alert.az',
-            'to' => $this->formatPhone($phone),
-            'text' => $message,
-        ]);
-
-        if ($response->successful()) {
-            $data = $response->json();
-            return isset($data['messages'][0]['status']) && $data['messages'][0]['status'] == '0';
-        }
-
-        return false;
-    }
-
-    /**
-     * Send SMS via Azercell
-     */
-    private function sendViaAzercell(string $phone, string $message): bool
-    {
-        // Placeholder for Azercell implementation
-        Log::info("Would send SMS via Azercell to {$phone}: {$message}");
-        return false;
     }
 
     /**
@@ -423,24 +345,6 @@ class VerificationService
             </div>
         </body>
         </html>';
-    }
-
-    /**
-     * Format phone number
-     */
-    private function formatPhone(string $phone): string
-    {
-        $phone = preg_replace('/[^0-9]/', '', $phone);
-
-        if (strlen($phone) === 9 && in_array(substr($phone, 0, 2), ['50', '51', '55', '70', '77'])) {
-            $phone = '994' . $phone;
-        }
-
-        if (!str_starts_with($phone, '+')) {
-            $phone = '+' . $phone;
-        }
-
-        return $phone;
     }
 
     /**
