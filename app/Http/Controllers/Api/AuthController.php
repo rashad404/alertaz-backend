@@ -274,6 +274,52 @@ class AuthController extends Controller
     }
 
     /**
+     * Verify email for authenticated user.
+     * Updates the current user's email_verified_at.
+     */
+    public function verifyEmailForUser(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'email' => 'required|string|email|max:255',
+            'code' => 'required|string|min:4|max:6',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $result = $this->verificationService->verifyCode($request->email, $request->code, 'email');
+
+        if (!$result['success']) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $result['message'],
+            ], 400);
+        }
+
+        // Update the authenticated user's email verification
+        $user = $request->user();
+        $user->update([
+            'email' => $request->email,
+            'email_verified_at' => now(),
+        ]);
+        $user->refresh();
+        $user->available_notification_channels = $user->getAvailableNotificationChannels();
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Email verified successfully',
+            'data' => [
+                'user' => $user,
+            ]
+        ]);
+    }
+
+    /**
      * Send email verification code.
      */
     public function sendEmailVerification(Request $request)
