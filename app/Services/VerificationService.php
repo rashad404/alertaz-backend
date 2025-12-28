@@ -21,9 +21,17 @@ class VerificationService
     /**
      * Check if SMS test mode is enabled
      */
-    private function isTestMode(): bool
+    private function isSmsTestMode(): bool
     {
         return env('SMS_TEST_MODE', true);
+    }
+
+    /**
+     * Check if Email test mode is enabled
+     */
+    private function isEmailTestMode(): bool
+    {
+        return env('EMAIL_TEST_MODE', true);
     }
 
     /**
@@ -31,7 +39,7 @@ class VerificationService
      */
     private function getMockCode(): string
     {
-        return env('SMS_MOCK_CODE', '123456');
+        return env('VERIFICATION_MOCK_CODE', '123456');
     }
 
     /**
@@ -41,7 +49,7 @@ class VerificationService
     {
         try {
             // Generate code - use mock code in test mode, random code in production
-            $code = $this->isTestMode() ? $this->getMockCode() : $this->generateCode();
+            $code = $this->isSmsTestMode() ? $this->getMockCode() : $this->generateCode();
 
             // Store verification record
             $verification = OtpVerification::create([
@@ -57,7 +65,7 @@ class VerificationService
             ]);
 
             // In test mode, just log the code (no real SMS)
-            if ($this->isTestMode()) {
+            if ($this->isSmsTestMode()) {
                 Log::info("📱 [TEST MODE] SMS Verification Code for {$phone}: {$code}");
 
                 return [
@@ -108,7 +116,7 @@ class VerificationService
     {
         try {
             // Generate code - use mock code in test mode, random code in production
-            $code = $this->isTestMode() ? $this->getMockCode() : $this->generateCode();
+            $code = $this->isEmailTestMode() ? $this->getMockCode() : $this->generateCode();
 
             // Store verification record
             $verification = OtpVerification::create([
@@ -124,7 +132,7 @@ class VerificationService
             ]);
 
             // In test mode, just log the code (no real email)
-            if ($this->isTestMode()) {
+            if ($this->isEmailTestMode()) {
                 Log::info("📧 [TEST MODE] Email Verification Code for {$email}: {$code}");
 
                 return [
@@ -169,8 +177,11 @@ class VerificationService
     public function verifyCode(string $identifier, string $code, string $type = 'sms'): array
     {
         try {
+            // Check test mode based on type
+            $isTestMode = $type === 'sms' ? $this->isSmsTestMode() : $this->isEmailTestMode();
+
             // In test mode, always accept the mock code
-            if ($this->isTestMode() && $code === $this->getMockCode()) {
+            if ($isTestMode && $code === $this->getMockCode()) {
                 Log::info("[TEST MODE] Auto-accepting mock verification code {$code} for {$identifier}");
 
                 // Clean up any existing verifications for this identifier
@@ -255,7 +266,8 @@ class VerificationService
             ->where('created_at', '>', now()->subMinute())
             ->exists();
 
-        if ($recentAttempt && !$this->isTestMode()) {
+        $isTestMode = $type === 'sms' ? $this->isSmsTestMode() : $this->isEmailTestMode();
+        if ($recentAttempt && !$isTestMode) {
             return [
                 'success' => false,
                 'message' => 'Please wait before requesting another code',
