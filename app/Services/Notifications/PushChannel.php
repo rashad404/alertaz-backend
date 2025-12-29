@@ -207,13 +207,13 @@ class PushChannel implements NotificationChannel
 
         try {
             // Create subscription object from database record
+            // Don't specify contentEncoding - let the library auto-detect
             $subscription = Subscription::create([
                 'endpoint' => $pushSub->endpoint,
                 'keys' => [
                     'p256dh' => $pushSub->public_key,
                     'auth' => $pushSub->auth_token,
                 ],
-                'contentEncoding' => 'aesgcm',
             ]);
 
             // Send the notification
@@ -396,7 +396,7 @@ class PushChannel implements NotificationChannel
             'data' => array_merge([
                 'alertId' => $alert->id,
                 'alertType' => $alert->alertType->slug ?? 'custom',
-                'url' => config('app.frontend_url', config('app.url')) . '/dashboard/alerts/' . $alert->id,
+                'url' => config('app.frontend_url', config('app.url')) . '/alerts',
                 'timestamp' => now()->toIso8601String(),
             ], $data),
         ];
