@@ -21,14 +21,14 @@ class NotificationDispatcher
 
     public function __construct()
     {
-        // Initialize notification channels
+        // Initialize notification channels using Laravel's container for dependency injection
         $this->channels = [
-            'email' => new EmailChannel(),
-            'sms' => new SmsChannel(),
-            'telegram' => new TelegramChannel(),
-            'whatsapp' => new WhatsAppChannel(),
-            'slack' => new SlackChannel(),
-            'push' => new PushChannel(),
+            'email' => app(EmailChannel::class),
+            'sms' => app(SmsChannel::class),
+            'telegram' => app(TelegramChannel::class),
+            'whatsapp' => app(WhatsAppChannel::class),
+            'slack' => app(SlackChannel::class),
+            'push' => app(PushChannel::class),
         ];
     }
 
