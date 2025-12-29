@@ -24,9 +24,10 @@ use Illuminate\Support\Facades\Schedule;
 
 // Personal Alert Checks
 // Check all alerts every minute (alerts have their own frequency control)
-Schedule::command('alerts:check')->everyMinute()
+Schedule::exec('/usr/local/bin/ea-php82 ' . base_path('artisan') . ' alerts:check')
+    ->everyMinute()
     ->withoutOverlapping()
-    ->runInBackground();
+    ->appendOutputTo(storage_path('logs/alerts.log'));
 
 // // Check crypto alerts more frequently during trading hours
 // Schedule::command('alerts:check --type=crypto')->everyThirtySeconds()
@@ -35,10 +36,6 @@ Schedule::command('alerts:check')->everyMinute()
 //     ->withoutOverlapping()
 //     ->runInBackground();
 
-// Check website alerts every 2 minutes
-Schedule::command('alerts:check --type=website')->everyTwoMinutes()
-    ->withoutOverlapping()
-    ->runInBackground();
 
 // // Check weather alerts every 10 minutes
 // Schedule::command('alerts:check --type=weather')->everyTenMinutes()
