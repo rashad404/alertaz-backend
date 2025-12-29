@@ -223,6 +223,66 @@ class AuthController extends Controller
     }
 
     /**
+     * Send phone verification SMS for authenticated user.
+     * This is a protected endpoint that charges the user for SMS.
+     */
+    public function sendPhoneVerificationForUser(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'phone' => 'required|string|regex:/^(\+994)?[0-9]{9,12}$/',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $phone = $request->phone;
+        if (!str_starts_with($phone, '+')) {
+            $phone = '+994' . ltrim($phone, '0');
+        }
+
+        $user = $request->user();
+
+        // Send OTP using verification service with billing
+        $result = $this->verificationService->sendSMSVerification($phone, $user, 'verify');
+
+        if ($result['success']) {
+            return response()->json([
+                'status' => 'success',
+                'message' => $result['message'],
+                'data' => [
+                    'phone' => $phone,
+                    'expires_in' => $result['expires_in'] ?? 600,
+                    'cost' => $result['cost'] ?? null,
+                    'debug' => $result['debug'] ?? null,
+                ]
+            ]);
+        }
+
+        // Handle insufficient balance error
+        if (($result['error_code'] ?? null) === 'insufficient_balance') {
+            return response()->json([
+                'status' => 'error',
+                'message' => $result['message'],
+                'error_code' => 'insufficient_balance',
+                'data' => [
+                    'required_amount' => $result['required_amount'] ?? null,
+                    'current_balance' => $result['current_balance'] ?? null,
+                ]
+            ], 402);
+        }
+
+        return response()->json([
+            'status' => 'error',
+            'message' => $result['message']
+        ], 400);
+    }
+
+    /**
      * Verify phone for authenticated user.
      * Updates the current user's phone and marks it as verified.
      */

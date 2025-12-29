@@ -55,6 +55,9 @@ return [
     'sms' => [
         'api_key' => env('SMS_API_KEY'),
         'base_url' => env('SMS_BASE_URL', 'https://sms-provider.az/api'),
+        'test_mode' => env('SMS_TEST_MODE', true),
+        'cost_per_message' => env('SMS_COST_PER_MESSAGE', 0.04),
+        'chars_per_segment' => env('SMS_CHARS_PER_SEGMENT', 153),
     ],
 
     'push' => [

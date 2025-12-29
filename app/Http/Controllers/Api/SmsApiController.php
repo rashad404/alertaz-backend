@@ -5,7 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\SmsMessage;
 use App\Models\UserAllowedSender;
-use App\Services\QuickSmsService;
+use App\Services\SmsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -13,9 +13,9 @@ use Illuminate\Support\Facades\Validator;
 
 class SmsApiController extends Controller
 {
-    private QuickSmsService $smsService;
+    private SmsService $smsService;
 
-    public function __construct(QuickSmsService $smsService)
+    public function __construct(SmsService $smsService)
     {
         $this->smsService = $smsService;
     }
@@ -58,67 +58,47 @@ class SmsApiController extends Controller
             ], 403);
         }
 
-        // Get SMS cost
-        $cost = config('app.sms_cost_per_message', 0.04);
+        // Send via SmsService (handles billing, balance check, and message recording)
+        $result = $this->smsService->send(
+            user: $user,
+            phone: $phone,
+            message: $message,
+            sender: $senderToUse,
+            source: 'api'
+        );
 
-        // Check user balance
-        if (!$user->hasEnoughBalance($cost)) {
+        if (!$result['success']) {
+            // Handle insufficient balance
+            if (($result['error_code'] ?? null) === 'insufficient_balance') {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Insufficient balance',
+                    'code' => 'INSUFFICIENT_BALANCE',
+                    'current_balance' => number_format($result['current_balance'] ?? 0, 2, '.', ''),
+                    'required' => number_format($result['required_amount'] ?? 0, 2, '.', ''),
+                ], 402);
+            }
+
             return response()->json([
                 'status' => 'error',
-                'message' => 'Insufficient balance',
-                'code' => 'INSUFFICIENT_BALANCE',
-                'current_balance' => number_format($user->balance, 2, '.', ''),
-                'required' => number_format($cost, 2, '.', ''),
-            ], 402);
+                'message' => 'Failed to send SMS',
+                'code' => 'SMS_SEND_FAILED',
+                'error' => $result['error'] ?? 'Unknown error',
+            ], 500);
         }
-
-        // Check if Unicode is needed
-        $unicode = $this->smsService->requiresUnicode($message);
-
-        // Create SMS record
-        $smsMessage = SmsMessage::create([
-            'user_id' => $user->id,
-            'phone' => $phone,
-            'message' => $message,
-            'sender' => $senderToUse,
-            'cost' => $cost,
-            'status' => 'pending',
-            'ip_address' => $request->ip(),
-        ]);
-
-        // Send SMS via QuickSMS
-        $result = $this->smsService->sendSMS($phone, $message, $senderToUse, $unicode);
-
-        if ($result['success']) {
-            // Deduct from user balance
-            $user->deductBalance($cost);
-
-            // Update SMS record
-            $smsMessage->markAsSent($result['transaction_id']);
-
-            return response()->json([
-                'status' => 'success',
-                'message' => 'SMS sent successfully',
-                'data' => [
-                    'id' => $smsMessage->id,
-                    'transaction_id' => $result['transaction_id'],
-                    'phone' => $phone,
-                    'sender' => $senderToUse,
-                    'cost' => number_format($cost, 2, '.', ''),
-                    'remaining_balance' => number_format($user->fresh()->balance, 2, '.', ''),
-                ],
-            ], 200);
-        }
-
-        // Failed to send
-        $smsMessage->markAsFailed($result['error_message'], $result['error_code'] ?? null);
 
         return response()->json([
-            'status' => 'error',
-            'message' => 'Failed to send SMS',
-            'code' => 'SMS_SEND_FAILED',
-            'error' => $result['error_message'] ?? 'Unknown error',
-        ], 500);
+            'status' => 'success',
+            'message' => 'SMS sent successfully',
+            'data' => [
+                'transaction_id' => $result['transaction_id'] ?? null,
+                'phone' => $phone,
+                'sender' => $senderToUse,
+                'cost' => number_format($result['cost'] ?? 0, 2, '.', ''),
+                'remaining_balance' => number_format($result['new_balance'] ?? 0, 2, '.', ''),
+                'is_test' => $result['is_test'] ?? false,
+            ],
+        ], 200);
     }
 
     /**
@@ -136,7 +116,7 @@ class SmsApiController extends Controller
             'data' => [
                 'balance' => number_format($user->balance, 2, '.', ''),
                 'total_spent' => number_format($user->total_spent, 2, '.', ''),
-                'cost_per_sms' => number_format(config('app.sms_cost_per_message', 0.04), 2, '.', ''),
+                'cost_per_sms' => number_format(config('services.sms.cost_per_message', 0.04), 2, '.', ''),
             ],
         ], 200);
     }

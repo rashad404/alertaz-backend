@@ -11,10 +11,12 @@ use Illuminate\Support\Str;
 
 class VerificationService
 {
+    private SmsService $smsService;
     private QuickSmsService $quickSmsService;
 
-    public function __construct(QuickSmsService $quickSmsService)
+    public function __construct(SmsService $smsService, QuickSmsService $quickSmsService)
     {
+        $this->smsService = $smsService;
         $this->quickSmsService = $quickSmsService;
     }
 
@@ -44,8 +46,13 @@ class VerificationService
 
     /**
      * Send SMS verification code
+     *
+     * @param string $phone Phone number to send code to
+     * @param User|null $user User to charge (if provided, billing will be applied)
+     * @param string $purpose Purpose of verification ('login', 'verify')
+     * @return array
      */
-    public function sendSMSVerification(string $phone, ?User $user = null): array
+    public function sendSMSVerification(string $phone, ?User $user = null, string $purpose = 'login'): array
     {
         try {
             // Generate code - use mock code in test mode, random code in production
@@ -57,14 +64,14 @@ class VerificationService
                 'email' => null,
                 'code' => $code,
                 'type' => 'sms',
-                'purpose' => 'login',
+                'purpose' => $purpose,
                 'expires_at' => now()->addMinutes(10),
                 'attempts' => 0,
                 'ip_address' => request()->ip(),
                 'user_agent' => request()->userAgent(),
             ]);
 
-            // In test mode, just log the code (no real SMS)
+            // In test mode, just log the code (no real SMS, no billing)
             if ($this->isSmsTestMode()) {
                 Log::info("📱 [TEST MODE] SMS Verification Code for {$phone}: {$code}");
 
@@ -80,15 +87,56 @@ class VerificationService
                 ];
             }
 
-            // Production mode - send actual SMS via QuickSMS
+            // Production mode - send actual SMS with billing
             $message = "Your Alert.az verification code is: {$code}. Valid for 10 minutes.";
+
+            // If user is provided, use SmsService with billing
+            if ($user) {
+                $result = $this->smsService->send(
+                    user: $user,
+                    phone: $phone,
+                    message: $message,
+                    sender: 'Alert.az',
+                    source: 'verification'
+                );
+
+                // Check for insufficient balance
+                if (!$result['success'] && ($result['error_code'] ?? null) === 'insufficient_balance') {
+                    return [
+                        'success' => false,
+                        'message' => 'Insufficient balance to send verification SMS',
+                        'error_code' => 'insufficient_balance',
+                        'required_amount' => $result['required_amount'] ?? null,
+                        'current_balance' => $result['current_balance'] ?? null,
+                    ];
+                }
+
+                if (!$result['success']) {
+                    throw new \Exception($result['error'] ?? 'Failed to send SMS');
+                }
+
+                Log::info("📱 SMS Verification sent to {$phone} (billed)", [
+                    'user_id' => $user->id,
+                    'transaction_id' => $result['transaction_id'] ?? null,
+                    'cost' => $result['cost'] ?? 0,
+                ]);
+
+                return [
+                    'success' => true,
+                    'message' => 'Verification code sent to ' . $this->maskPhone($phone),
+                    'expires_in' => 600,
+                    'cost' => $result['cost'] ?? null,
+                ];
+            }
+
+            // No user provided - send via QuickSMS directly (no billing, e.g., registration)
             $result = $this->quickSmsService->sendSMS($phone, $message, 'Alert.az');
 
             if (!$result['success']) {
                 throw new \Exception($result['error_message'] ?? 'Failed to send SMS');
             }
 
-            Log::info("📱 SMS Verification sent to {$phone}", [
+            Log::info("📱 SMS Verification sent to {$phone} (no billing)", [
                 'transaction_id' => $result['transaction_id'] ?? null,
             ]);
 
@@ -257,8 +305,13 @@ class VerificationService
 
     /**
      * Resend verification code
+     *
+     * @param string $identifier Phone or email
+     * @param string $type Type of verification ('sms' or 'email')
+     * @param User|null $user User to charge (if provided, billing will be applied for SMS)
+     * @return array
      */
-    public function resendCode(string $identifier, string $type = 'sms'): array
+    public function resendCode(string $identifier, string $type = 'sms', ?User $user = null): array
     {
         // Check for rate limiting
         $recentAttempt = OtpVerification::where('type', $type)
@@ -283,9 +336,9 @@ class VerificationService
 
         // Send new code
         if ($type === 'sms') {
-            return $this->sendSMSVerification($identifier);
+            return $this->sendSMSVerification($identifier, $user, 'verify');
         } else {
-            return $this->sendEmailVerification($identifier);
+            return $this->sendEmailVerification($identifier, $user);
         }
     }
 

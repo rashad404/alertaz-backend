@@ -50,6 +50,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/user', [AuthController::class, 'me']);
     Route::put('/user', [AuthController::class, 'updateProfile']);
     Route::post('/user/change-password', [AuthController::class, 'changePassword']);
+    Route::post('/user/send-phone-verification', [AuthController::class, 'sendPhoneVerificationForUser']);
     Route::post('/user/verify-phone', [AuthController::class, 'verifyPhoneForUser']);
     Route::post('/user/verify-email', [AuthController::class, 'verifyEmailForUser']);
     Route::post('/auth/logout', [AuthController::class, 'logout']);
