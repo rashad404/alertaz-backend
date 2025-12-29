@@ -150,12 +150,33 @@ class WebsiteMonitor extends BaseMonitor
     }
 
     /**
-     * Format alert message - returns simple identifier for frontend translation.
+     * Format alert message with detailed information.
      */
     protected function formatAlertMessage(PersonalAlert $alert, array $currentData): string
     {
-        // Return simple type identifier that frontend will translate
+        $url = $alert->asset;
         $isOnline = $currentData['is_online'] ?? false;
-        return $isOnline ? 'website_up' : 'website_down';
+        $statusCode = $currentData['status_code'] ?? 0;
+        $responseTime = $currentData['response_time'] ?? 0;
+        $error = $currentData['error'] ?? null;
+        $timestamp = now()->format('Y-m-d H:i:s');
+
+        if ($isOnline) {
+            return json_encode([
+                'type' => 'website_up',
+                'url' => $url,
+                'status_code' => $statusCode,
+                'response_time' => $responseTime,
+                'timestamp' => $timestamp,
+            ]);
+        } else {
+            return json_encode([
+                'type' => 'website_down',
+                'url' => $url,
+                'status_code' => $statusCode,
+                'error' => $error,
+                'timestamp' => $timestamp,
+            ]);
+        }
     }
 }
