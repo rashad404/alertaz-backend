@@ -106,7 +106,17 @@ class PushChannel implements NotificationChannel
         $errors = [];
 
         foreach ($subscriptions as $sub) {
+            Log::info("Sending push to subscription {$sub->id}", [
+                'endpoint' => substr($sub->endpoint, 0, 50) . '...',
+                'user_id' => $user->id,
+            ]);
+
             $result = $this->sendToSubscription($sub, $payload);
+
+            Log::info("Push result for subscription {$sub->id}", [
+                'success' => $result['success'],
+                'error' => $result['error'] ?? null,
+            ]);
 
             if ($result['success']) {
                 $sentCount++;
@@ -224,7 +234,14 @@ class PushChannel implements NotificationChannel
             // Handle failure
             $endpoint = $report->getEndpoint();
             $reason = $report->getReason();
-            $statusCode = $report->getStatusCode();
+
+            // Get status code - handle different library versions
+            $statusCode = null;
+            if (method_exists($report, 'getStatusCode')) {
+                $statusCode = $report->getStatusCode();
+            } elseif (method_exists($report, 'getResponse') && $report->getResponse()) {
+                $statusCode = $report->getResponse()->getStatusCode();
+            }
 
             // If subscription is invalid (410 Gone), mark for removal
             if ($statusCode === 410) {
@@ -233,7 +250,7 @@ class PushChannel implements NotificationChannel
 
             return [
                 'success' => false,
-                'error' => "Push failed: {$reason} (Status: {$statusCode})",
+                'error' => "Push failed: {$reason}" . ($statusCode ? " (Status: {$statusCode})" : ''),
             ];
         } catch (\Exception $e) {
             Log::error("Push notification error: " . $e->getMessage());
