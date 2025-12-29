@@ -393,12 +393,12 @@ class PushChannel implements NotificationChannel
                     'icon' => '/icons/dismiss.png',
                 ],
             ],
-            'data' => array_merge([
+            'data' => array_merge($data, [
                 'alertId' => $alert->id,
                 'alertType' => $alert->alertType->slug ?? 'custom',
-                'url' => config('app.frontend_url', config('app.url')) . '/alerts',
+                'clickUrl' => config('app.frontend_url', config('app.url')) . '/alerts',
                 'timestamp' => now()->toIso8601String(),
-            ], $data),
+            ]),
         ];
     }
 
