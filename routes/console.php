@@ -24,10 +24,19 @@ use Illuminate\Support\Facades\Schedule;
 
 // Personal Alert Checks
 // Check all alerts every minute (alerts have their own frequency control)
-Schedule::exec('/usr/local/bin/ea-php82 ' . base_path('artisan') . ' alerts:check')
-    ->everyMinute()
-    ->withoutOverlapping()
-    ->appendOutputTo(storage_path('logs/alerts.log'));
+if (app()->environment('production')) {
+    // Production (cPanel): use full PHP path
+    Schedule::exec('/usr/local/bin/ea-php82 ' . base_path('artisan') . ' alerts:check')
+        ->everyMinute()
+        ->withoutOverlapping()
+        ->appendOutputTo(storage_path('logs/alerts.log'));
+} else {
+    // Local development: use artisan command directly
+    Schedule::command('alerts:check')
+        ->everyMinute()
+        ->withoutOverlapping()
+        ->appendOutputTo(storage_path('logs/alerts.log'));
+}
 
 // // Check crypto alerts more frequently during trading hours
 // Schedule::command('alerts:check --type=crypto')->everyThirtySeconds()
@@ -55,7 +64,14 @@ Schedule::exec('/usr/local/bin/ea-php82 ' . base_path('artisan') . ' alerts:chec
 //     ->runInBackground();
 
 // Run automated SMS campaigns every minute
-Schedule::exec('/usr/local/bin/ea-php82 ' . base_path('artisan') . ' campaigns:run-automated')
-    ->everyMinute()
-    ->withoutOverlapping()
-    ->appendOutputTo(storage_path('logs/campaigns.log'));
+if (app()->environment('production')) {
+    Schedule::exec('/usr/local/bin/ea-php82 ' . base_path('artisan') . ' campaigns:run-automated')
+        ->everyMinute()
+        ->withoutOverlapping()
+        ->appendOutputTo(storage_path('logs/campaigns.log'));
+} else {
+    Schedule::command('campaigns:run-automated')
+        ->everyMinute()
+        ->withoutOverlapping()
+        ->appendOutputTo(storage_path('logs/campaigns.log'));
+}
