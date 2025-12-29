@@ -47,28 +47,45 @@ class PushChannel implements NotificationChannel
             ];
         }
 
+        // Parse message to extract type key and data for NotificationLog
+        // Monitors may send JSON (WebsiteMonitor) or plain string (CryptoMonitor)
+        $parsedMessage = json_decode($message, true);
+
+        if (json_last_error() === JSON_ERROR_NONE && isset($parsedMessage['type'])) {
+            // JSON format: {"type": "website_down", "url": "...", ...}
+            $typeKey = $parsedMessage['type'];
+            $messageData = $parsedMessage;
+        } else {
+            // Plain string format: "crypto_target_reached"
+            $typeKey = $message;
+            $messageData = [];
+        }
+
+        // Merge message data with additional data for frontend translation
+        $notificationData = array_merge($messageData, $data, [
+            'alertId' => $alert->id,
+            'alertType' => $alert->alertType->slug ?? 'unknown',
+            'alertName' => $alert->name,
+            'asset' => $alert->asset,
+        ]);
+
         // Mock mode for alert notifications
         $isMockMode = config('app.notifications_mock', env('NOTIFICATIONS_MOCK_MODE', false));
 
         if ($isMockMode) {
             Log::info("🔔 [MOCK] Push notification to user {$user->id}:", [
                 'alert' => $alert->name,
-                'type' => $message,  // Type key like "website_up"
+                'type' => $typeKey,
                 'user_id' => $user->id,
             ]);
 
-            // Save type key and structured data (NO pre-translated text)
+            // Save type key + data (frontend will translate based on user's language)
             NotificationLog::create([
                 'user_id' => $user->id,
                 'type' => 'push',
-                'title' => $message,  // Type key: "website_up", "crypto_target_reached", etc.
-                'body' => null,       // No pre-formatted body - frontend will generate it
-                'data' => array_merge($data, [
-                    'alertId' => $alert->id,
-                    'alertType' => $alert->alertType->slug ?? 'unknown',
-                    'alertName' => $alert->name,
-                    'asset' => $alert->asset,
-                ]),
+                'title' => $typeKey,
+                'body' => null,
+                'data' => $notificationData,
                 'is_mock' => true,
                 'is_read' => false,
             ]);
@@ -80,7 +97,7 @@ class PushChannel implements NotificationChannel
             ];
         }
 
-        // Format payload for actual push notification
+        // Format payload for actual browser push notification (needs formatted text)
         $payload = $this->formatPayload($message, $alert, $data);
 
         // Real mode: send to all user's push subscriptions
@@ -103,17 +120,13 @@ class PushChannel implements NotificationChannel
             }
         }
 
-        // Save type key and structured data (NO pre-translated text)
+        // Save type key + data (frontend will translate based on user's language)
         NotificationLog::create([
             'user_id' => $user->id,
             'type' => 'push',
-            'title' => $message,  // Type key: "website_up", "crypto_target_reached", etc.
-            'body' => null,       // No pre-formatted body - frontend will generate it
-            'data' => array_merge($data, [
-                'alertId' => $alert->id,
-                'alertType' => $alert->alertType->slug ?? 'unknown',
-                'alertName' => $alert->name,
-                'asset' => $alert->asset,
+            'title' => $typeKey,
+            'body' => null,
+            'data' => array_merge($notificationData, [
                 'sent_count' => $sentCount,
                 'total_subscriptions' => $subscriptions->count(),
             ]),
@@ -321,11 +334,21 @@ class PushChannel implements NotificationChannel
      */
     private function formatPayload(string $message, PersonalAlert $alert, array $data = []): array
     {
-        // Clean and format the message
-        $cleanedMessage = $this->cleanMessage($message);
-        $lines = explode("\n", $cleanedMessage);
-        $title = $lines[0] ?? 'Alert Triggered';
-        $body = implode("\n", array_slice($lines, 1, 3)); // Take first 3 lines for body
+        // Try to parse JSON message (format from monitors)
+        $parsedData = json_decode($message, true);
+
+        if (json_last_error() === JSON_ERROR_NONE && isset($parsedData['type'])) {
+            // Use parsed data to create human-readable message
+            $formatted = $this->formatAlertMessage($parsedData, $alert);
+            $title = $formatted['title'];
+            $body = $formatted['body'];
+        } else {
+            // Fallback for plain text messages
+            $cleanedMessage = $this->cleanMessage($message);
+            $lines = explode("\n", $cleanedMessage);
+            $title = $lines[0] ?? 'Alert Triggered';
+            $body = implode("\n", array_slice($lines, 1, 3));
+        }
 
         // Determine icon based on alert type
         $icon = $this->getIconForAlert($alert);
@@ -356,9 +379,132 @@ class PushChannel implements NotificationChannel
             'data' => array_merge([
                 'alertId' => $alert->id,
                 'alertType' => $alert->alertType->slug ?? 'custom',
-                'url' => config('app.url') . '/dashboard/alerts/' . $alert->id,
+                'url' => config('app.frontend_url', config('app.url')) . '/dashboard/alerts/' . $alert->id,
                 'timestamp' => now()->toIso8601String(),
             ], $data),
+        ];
+    }
+
+    /**
+     * Format alert message based on type.
+     */
+    private function formatAlertMessage(array $data, PersonalAlert $alert): array
+    {
+        $type = $data['type'] ?? 'alert';
+        $alertName = $alert->name;
+
+        // Website alerts
+        if (str_starts_with($type, 'website_')) {
+            $url = $data['url'] ?? $alert->asset ?? 'Unknown';
+            // Extract domain for cleaner display
+            $domain = parse_url($url, PHP_URL_HOST) ?? $url;
+
+            if ($type === 'website_down') {
+                $statusCode = $data['status_code'] ?? null;
+                $error = $data['error'] ?? null;
+
+                // Build informative body message
+                if ($error) {
+                    $body = $error;
+                } elseif ($statusCode) {
+                    $body = "HTTP {$statusCode} error";
+                } else {
+                    $body = "Website is not responding";
+                }
+
+                return [
+                    'title' => "Website Down: {$domain}",
+                    'body' => $body,
+                ];
+            } else {
+                $responseTime = $data['response_time'] ?? 0;
+                return [
+                    'title' => "Website Online: {$domain}",
+                    'body' => "Response time: {$responseTime}ms",
+                ];
+            }
+        }
+
+        // Crypto alerts
+        if (str_starts_with($type, 'crypto_')) {
+            $asset = strtoupper($data['asset'] ?? $data['symbol'] ?? $alert->asset ?? 'UNKNOWN');
+            $price = $data['price'] ?? $data['current_price'] ?? 0;
+            $formattedPrice = number_format($price, 2);
+
+            if ($type === 'crypto_above') {
+                return [
+                    'title' => "{$asset} Price Alert",
+                    'body' => "Price rose above \${$formattedPrice}",
+                ];
+            } elseif ($type === 'crypto_below') {
+                return [
+                    'title' => "{$asset} Price Alert",
+                    'body' => "Price dropped below \${$formattedPrice}",
+                ];
+            } else {
+                return [
+                    'title' => "{$asset} Price Alert",
+                    'body' => "Current price: \${$formattedPrice}",
+                ];
+            }
+        }
+
+        // Stock alerts
+        if (str_starts_with($type, 'stock_')) {
+            $symbol = strtoupper($data['symbol'] ?? $alert->asset ?? 'UNKNOWN');
+            $price = $data['price'] ?? 0;
+            $formattedPrice = number_format($price, 2);
+
+            if ($type === 'stock_above') {
+                return [
+                    'title' => "{$symbol} Stock Alert",
+                    'body' => "Price rose above \${$formattedPrice}",
+                ];
+            } elseif ($type === 'stock_below') {
+                return [
+                    'title' => "{$symbol} Stock Alert",
+                    'body' => "Price dropped below \${$formattedPrice}",
+                ];
+            } else {
+                return [
+                    'title' => "{$symbol} Stock Alert",
+                    'body' => "Current price: \${$formattedPrice}",
+                ];
+            }
+        }
+
+        // Currency alerts
+        if (str_starts_with($type, 'currency_')) {
+            $pair = strtoupper($data['pair'] ?? $data['asset'] ?? $alert->asset ?? 'USD/AZN');
+            $rate = $data['rate'] ?? $data['price'] ?? 0;
+
+            return [
+                'title' => "{$pair} Rate Alert",
+                'body' => "Current rate: {$rate}",
+            ];
+        }
+
+        // Weather alerts
+        if (str_starts_with($type, 'weather_')) {
+            $location = $data['location'] ?? $alert->asset ?? 'Unknown';
+            $condition = $data['condition'] ?? $data['description'] ?? '';
+            $temp = $data['temperature'] ?? $data['temp'] ?? null;
+
+            $body = $condition;
+            if ($temp !== null) {
+                $body = "Temperature: {$temp}°C" . ($condition ? " - {$condition}" : '');
+            }
+
+            return [
+                'title' => "Weather Alert: {$location}",
+                'body' => $body ?: 'Weather condition changed',
+            ];
+        }
+
+        // Default fallback - use alert name
+        return [
+            'title' => $alertName,
+            'body' => 'Alert condition met',
         ];
     }
 
