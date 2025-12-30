@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\StockController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\AlertParseController;
 use App\Http\Controllers\Api\SmsApiController;
+use App\Http\Controllers\Api\EmailApiController;
 use App\Http\Controllers\Api\ClientSchemaController;
 use App\Http\Controllers\Api\CampaignContactController;
 use App\Http\Controllers\Api\SegmentController;
@@ -95,6 +96,14 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/balance', [SmsApiController::class, 'getBalance']);
         Route::get('/history', [SmsApiController::class, 'history']);
         Route::get('/messages/{id}', [SmsApiController::class, 'show']);
+    });
+
+    // Email API Routes
+    Route::prefix('email')->group(function () {
+        Route::post('/send', [EmailApiController::class, 'send']);
+        Route::get('/balance', [EmailApiController::class, 'getBalance']);
+        Route::get('/history', [EmailApiController::class, 'history']);
+        Route::get('/messages/{id}', [EmailApiController::class, 'show']);
     });
 
     // User Project Management (SMS Campaign Projects)

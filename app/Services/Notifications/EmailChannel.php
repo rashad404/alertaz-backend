@@ -4,11 +4,18 @@ namespace App\Services\Notifications;
 
 use App\Models\User;
 use App\Models\PersonalAlert;
-use Illuminate\Support\Facades\Mail;
+use App\Services\EmailService;
 use Illuminate\Support\Facades\Log;
 
 class EmailChannel implements NotificationChannel
 {
+    private EmailService $emailService;
+
+    public function __construct(EmailService $emailService)
+    {
+        $this->emailService = $emailService;
+    }
+
     /**
      * Send email notification.
      */
@@ -36,32 +43,27 @@ class EmailChannel implements NotificationChannel
             ];
         }
 
-        try {
-            // Build professional HTML email
-            $htmlMessage = $this->buildAlertEmail($message, $alert);
+        // Build professional HTML email
+        $htmlMessage = $this->buildAlertEmail($message, $alert);
 
-            // Create plain text version
-            $plainText = $this->buildPlainText($message, $alert);
+        // Create plain text version
+        $plainText = $this->buildPlainText($message, $alert);
 
-            Mail::send([], [], function ($mail) use ($user, $alert, $htmlMessage, $plainText) {
-                $mail->to($user->email)
-                    ->subject("Alert: {$alert->name} - Alert.az")
-                    ->html($htmlMessage)
-                    ->text($plainText);
-            });
+        // Send via EmailService (with billing and logging)
+        $result = $this->emailService->send(
+            user: $user,
+            toEmail: $user->email,
+            subject: "Alert: {$alert->name} - Alert.az",
+            bodyHtml: $htmlMessage,
+            bodyText: $plainText,
+            source: 'notification'
+        );
 
-            return [
-                'success' => true,
-                'error' => null,
-            ];
-        } catch (\Exception $e) {
-            Log::error("Failed to send email to {$user->email}: " . $e->getMessage());
-
-            return [
-                'success' => false,
-                'error' => $e->getMessage(),
-            ];
-        }
+        return [
+            'success' => $result['success'],
+            'error' => $result['error'] ?? null,
+            'cost' => $result['cost'] ?? 0,
+        ];
     }
 
     /**
@@ -76,26 +78,63 @@ class EmailChannel implements NotificationChannel
             ];
         }
 
-        try {
-            $htmlMessage = $this->markdownToHtml($message);
+        $htmlMessage = $this->buildSimpleHtml('Test Notification', $message);
 
-            Mail::send([], [], function ($mail) use ($user, $htmlMessage, $message) {
-                $mail->to($user->email)
-                    ->subject('Test Notification - Alert.az')
-                    ->html($htmlMessage)
-                    ->text($message);
-            });
+        $result = $this->emailService->send(
+            user: $user,
+            toEmail: $user->email,
+            subject: 'Test Notification - Alert.az',
+            bodyHtml: $htmlMessage,
+            bodyText: $message,
+            source: 'notification'
+        );
 
-            return [
-                'success' => true,
-                'error' => null,
-            ];
-        } catch (\Exception $e) {
-            return [
-                'success' => false,
-                'error' => $e->getMessage(),
-            ];
-        }
+        return [
+            'success' => $result['success'],
+            'error' => $result['error'] ?? null,
+        ];
+    }
+
+    /**
+     * Build simple HTML email
+     */
+    private function buildSimpleHtml(string $title, string $message): string
+    {
+        $htmlMessage = nl2br(htmlspecialchars($message));
+
+        return '<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 0; font-family: Arial, Helvetica, sans-serif; background-color: #f3f4f6;">
+    <table width="100%" cellspacing="0" cellpadding="0" style="background-color: #f3f4f6;">
+        <tr>
+            <td align="center" style="padding: 40px 20px;">
+                <table width="600" cellspacing="0" cellpadding="0" style="max-width: 600px; width: 100%;">
+                    <tr>
+                        <td style="background-color: #515BC3; padding: 30px; text-align: center; border-radius: 12px 12px 0 0;">
+                            <h1 style="margin: 0; color: #ffffff; font-size: 24px;">Alert.az</h1>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="background-color: #ffffff; padding: 30px;">
+                            <h2 style="margin: 0 0 20px; color: #1F2937; font-size: 18px;">' . htmlspecialchars($title) . '</h2>
+                            <div style="color: #4B5563; font-size: 15px; line-height: 1.6;">' . $htmlMessage . '</div>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="background-color: #F9FAFB; padding: 20px 30px; border-radius: 0 0 12px 12px; text-align: center;">
+                            <p style="margin: 0; font-size: 12px; color: #9CA3AF;">&copy; ' . date('Y') . ' Alert.az</p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>';
     }
 
     /**
