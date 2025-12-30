@@ -167,6 +167,6 @@ return [
     'sms_rate_limit_per_second' => (int) env('SMS_RATE_LIMIT_PER_SECOND', 10),
     'campaign_confirmation_threshold' => (int) env('CAMPAIGN_CONFIRMATION_THRESHOLD', 1000),
 
-    'sms_default_senders' => ['Alert.az', 'Sayt.az', 'Task.az'],
+    'sms_default_senders' => ['Alert.az', 'Sayt.az', 'Task.az', 'Wallet.az'],
 
 ];

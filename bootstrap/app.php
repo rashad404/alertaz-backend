@@ -25,6 +25,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'cors' => \Illuminate\Http\Middleware\HandleCors::class,
             'admin' => \App\Http\Middleware\AdminMiddleware::class,
             'auth.client' => \App\Http\Middleware\AuthenticateClient::class,
+            'auth.sms' => \App\Http\Middleware\AuthenticateSmsApi::class,
         ]);
 
         $middleware->append(\Illuminate\Http\Middleware\HandleCors::class);

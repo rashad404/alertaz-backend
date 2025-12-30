@@ -248,6 +248,46 @@ class UserClientController extends Controller
     }
 
     /**
+     * Get user's default/primary API token
+     * Creates a default project if none exists
+     *
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function getDefaultToken(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        // Get first active client, or create one if none exists
+        $client = Client::where('user_id', $user->id)
+            ->where('status', 'active')
+            ->orderBy('created_at', 'asc')
+            ->first();
+
+        if (!$client) {
+            // Auto-create a default project for the user
+            $client = Client::create([
+                'name' => 'Default Project',
+                'api_token' => Client::generateApiToken(),
+                'user_id' => $user->id,
+                'status' => 'active',
+                'settings' => [
+                    'description' => 'Auto-created default project',
+                ],
+            ]);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'data' => [
+                'api_token' => $client->api_token,
+                'project_id' => $client->id,
+                'project_name' => $client->name,
+            ],
+        ], 200);
+    }
+
+    /**
      * Regenerate API token
      *
      * @param Request $request

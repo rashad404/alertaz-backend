@@ -90,26 +90,13 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/test', [NotificationController::class, 'sendTestNotification']);
     });
 
-    // SMS API Routes
-    Route::prefix('sms')->group(function () {
-        Route::post('/send', [SmsApiController::class, 'send']);
-        Route::get('/balance', [SmsApiController::class, 'getBalance']);
-        Route::get('/history', [SmsApiController::class, 'history']);
-        Route::get('/messages/{id}', [SmsApiController::class, 'show']);
-    });
-
-    // Email API Routes
-    Route::prefix('email')->group(function () {
-        Route::post('/send', [EmailApiController::class, 'send']);
-        Route::get('/balance', [EmailApiController::class, 'getBalance']);
-        Route::get('/history', [EmailApiController::class, 'history']);
-        Route::get('/messages/{id}', [EmailApiController::class, 'show']);
-    });
+// Note: SMS/Email API routes moved outside auth:sanctum to use hybrid auth (see below)
 
     // User Project Management (SMS Campaign Projects)
     Route::prefix('projects')->group(function () {
         Route::get('/', [UserClientController::class, 'index']);
         Route::post('/', [UserClientController::class, 'store']);
+        Route::get('/default-token', [UserClientController::class, 'getDefaultToken']);
         Route::get('/{id}', [UserClientController::class, 'show']);
         Route::put('/{id}', [UserClientController::class, 'update']);
         Route::delete('/{id}', [UserClientController::class, 'destroy']);
@@ -147,6 +134,26 @@ Route::get('/notifications/vapid-public-key', [NotificationController::class, 'g
 
 // SMS Webhook (public - for delivery reports from QuickSMS)
 Route::post('/webhooks/sms/delivery', [SmsApiController::class, 'handleWebhook']);
+
+// SMS/Email API Routes (supports both Sanctum session tokens AND permanent client tokens)
+// This allows partners like wallet.az to use permanent API tokens
+Route::middleware('auth.sms')->group(function () {
+    // SMS API Routes
+    Route::prefix('sms')->group(function () {
+        Route::post('/send', [SmsApiController::class, 'send']);
+        Route::get('/balance', [SmsApiController::class, 'getBalance']);
+        Route::get('/history', [SmsApiController::class, 'history']);
+        Route::get('/messages/{id}', [SmsApiController::class, 'show']);
+    });
+
+    // Email API Routes
+    Route::prefix('email')->group(function () {
+        Route::post('/send', [EmailApiController::class, 'send']);
+        Route::get('/balance', [EmailApiController::class, 'getBalance']);
+        Route::get('/history', [EmailApiController::class, 'history']);
+        Route::get('/messages/{id}', [EmailApiController::class, 'show']);
+    });
+});
 
 // Campaign Management API (Client Token Authentication)
 Route::middleware('auth.client')->group(function () {
