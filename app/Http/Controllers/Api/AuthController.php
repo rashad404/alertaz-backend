@@ -829,6 +829,9 @@ class AuthController extends Controller
             $emailVerified = $verification['email_verified'] ?? false;
             $phoneVerified = $verification['phone_verified'] ?? false;
 
+            // Calculate token expiry (default 30 days if not provided)
+            $tokenExpiresAt = now()->addSeconds($tokens['expires_in'] ?? 2592000);
+
             if (!$user) {
                 $user = User::create([
                     'name' => $walletUser['name'],
@@ -836,6 +839,9 @@ class AuthController extends Controller
                     'phone' => $walletUser['phone'] ?? null,
                     'avatar' => $walletUser['avatar'] ?? null,
                     'wallet_id' => $walletUser['id'],
+                    'wallet_access_token' => $tokens['access_token'],
+                    'wallet_refresh_token' => $tokens['refresh_token'] ?? null,
+                    'wallet_token_expires_at' => $tokenExpiresAt,
                     'provider' => 'wallet',
                     'provider_id' => (string) $walletUser['id'],
                     'email_verified_at' => $emailVerified ? now() : null,
@@ -847,6 +853,9 @@ class AuthController extends Controller
                 // Update user with latest data from Wallet.az
                 $user->update([
                     'wallet_id' => $walletUser['id'],
+                    'wallet_access_token' => $tokens['access_token'],
+                    'wallet_refresh_token' => $tokens['refresh_token'] ?? null,
+                    'wallet_token_expires_at' => $tokenExpiresAt,
                     'name' => $walletUser['name'],
                     'avatar' => $walletUser['avatar'] ?? $user->avatar,
                     'phone' => $walletUser['phone'] ?? $user->phone,
@@ -877,6 +886,135 @@ class AuthController extends Controller
                 'status' => 'error',
                 'message' => 'Authentication failed: ' . $e->getMessage()
             ], 500);
+        }
+    }
+
+    /**
+     * Sync user profile from Wallet.az.
+     * Called when user returns from editing profile on Wallet.az.
+     */
+    public function syncFromWallet(Request $request)
+    {
+        $user = $request->user();
+
+        // Only for Wallet.az users
+        if (!$user->wallet_id || !$user->wallet_access_token) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Not a Wallet.az user'
+            ], 400);
+        }
+
+        try {
+            $walletApiUrl = env('WALLET_API_URL', 'http://100.89.150.50:8011/api');
+
+            // Fetch fresh user data from Wallet.az
+            $userResponse = Http::withToken($user->wallet_access_token)
+                ->get("{$walletApiUrl}/oauth/user");
+
+            if (!$userResponse->successful()) {
+                // Token might be expired, try to refresh
+                if ($user->wallet_refresh_token) {
+                    $refreshed = $this->refreshWalletToken($user);
+                    if (!$refreshed) {
+                        return response()->json([
+                            'status' => 'error',
+                            'message' => 'Failed to refresh Wallet.az token'
+                        ], 401);
+                    }
+
+                    // Retry with new token
+                    $userResponse = Http::withToken($user->wallet_access_token)
+                        ->get("{$walletApiUrl}/oauth/user");
+
+                    if (!$userResponse->successful()) {
+                        return response()->json([
+                            'status' => 'error',
+                            'message' => 'Failed to fetch user data from Wallet.az'
+                        ], 400);
+                    }
+                } else {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Failed to fetch user data from Wallet.az'
+                    ], 400);
+                }
+            }
+
+            $walletUser = $userResponse->json()['data'];
+            $verification = $walletUser['verification'] ?? [];
+            $emailVerified = $verification['email_verified'] ?? false;
+            $phoneVerified = $verification['phone_verified'] ?? false;
+
+            // Update user with fresh data from Wallet.az
+            $user->update([
+                'name' => $walletUser['name'],
+                'avatar' => $walletUser['avatar'] ?? $user->avatar,
+                'phone' => $walletUser['phone'] ?? $user->phone,
+                'email_verified_at' => $emailVerified ? ($user->email_verified_at ?? now()) : $user->email_verified_at,
+                'phone_verified_at' => $phoneVerified ? ($user->phone_verified_at ?? now()) : $user->phone_verified_at,
+            ]);
+
+            $user->refresh();
+            $user->available_notification_channels = $user->getAvailableNotificationChannels();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Profile synced from Wallet.az',
+                'data' => $user
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Wallet sync error', [
+                'user_id' => $user->id,
+                'message' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to sync profile'
+            ], 500);
+        }
+    }
+
+    /**
+     * Refresh Wallet.az access token.
+     */
+    protected function refreshWalletToken(User $user): bool
+    {
+        try {
+            $walletApiUrl = env('WALLET_API_URL', 'http://100.89.150.50:8011/api');
+            $clientId = env('WALLET_CLIENT_ID');
+            $clientSecret = env('WALLET_CLIENT_SECRET');
+
+            $tokenResponse = Http::post("{$walletApiUrl}/oauth/token", [
+                'grant_type' => 'refresh_token',
+                'client_id' => $clientId,
+                'client_secret' => $clientSecret,
+                'refresh_token' => $user->wallet_refresh_token,
+            ]);
+
+            if (!$tokenResponse->successful()) {
+                return false;
+            }
+
+            $tokens = $tokenResponse->json();
+            $tokenExpiresAt = now()->addSeconds($tokens['expires_in'] ?? 2592000);
+
+            $user->update([
+                'wallet_access_token' => $tokens['access_token'],
+                'wallet_refresh_token' => $tokens['refresh_token'] ?? $user->wallet_refresh_token,
+                'wallet_token_expires_at' => $tokenExpiresAt,
+            ]);
+
+            return true;
+
+        } catch (\Exception $e) {
+            Log::error('Wallet token refresh failed', [
+                'user_id' => $user->id,
+                'message' => $e->getMessage()
+            ]);
+            return false;
         }
     }
 

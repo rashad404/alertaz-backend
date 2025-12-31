@@ -28,6 +28,9 @@ class User extends Authenticatable
         'google_id',
         'facebook_id',
         'wallet_id',
+        'wallet_access_token',
+        'wallet_refresh_token',
+        'wallet_token_expires_at',
         'avatar',
         'provider',
         'provider_id',
@@ -55,6 +58,8 @@ class User extends Authenticatable
         'google_id',
         'facebook_id',
         'provider_id',
+        'wallet_access_token',
+        'wallet_refresh_token',
     ];
 
     /**
@@ -72,6 +77,7 @@ class User extends Authenticatable
             'notification_preferences' => 'array',
             'balance' => 'decimal:2',
             'total_spent' => 'decimal:2',
+            'wallet_token_expires_at' => 'datetime',
         ];
     }
 

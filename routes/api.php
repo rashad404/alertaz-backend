@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\SegmentController;
 use App\Http\Controllers\Api\SavedSegmentController;
 use App\Http\Controllers\Api\CampaignController;
 use App\Http\Controllers\Api\UserClientController;
+use App\Http\Controllers\Api\WalletController;
 
 // Authentication Routes
 Route::prefix('auth')->group(function () {
@@ -45,6 +46,9 @@ Route::prefix('auth')->group(function () {
     Route::post('/wallet/callback', [AuthController::class, 'walletCallback']);
 });
 
+// Wallet.az Webhook (public - for payment notifications)
+Route::post('/webhooks/wallet', [WalletController::class, 'webhook']);
+
 // Public alert parsing (no auth required for better UX)
 Route::post('/alerts/parse', [AlertParseController::class, 'parse']);
 
@@ -57,7 +61,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/user/send-phone-verification', [AuthController::class, 'sendPhoneVerificationForUser']);
     Route::post('/user/verify-phone', [AuthController::class, 'verifyPhoneForUser']);
     Route::post('/user/verify-email', [AuthController::class, 'verifyEmailForUser']);
+    Route::post('/user/sync-from-wallet', [AuthController::class, 'syncFromWallet']);
     Route::post('/auth/logout', [AuthController::class, 'logout']);
+
+    // Wallet.az Top Up
+    Route::post('/wallet/topup', [WalletController::class, 'topup']);
 
     // Alert Types
     Route::get('/alert-types', [PersonalAlertController::class, 'getAlertTypes']);
