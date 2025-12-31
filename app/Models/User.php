@@ -27,6 +27,7 @@ class User extends Authenticatable
         'email_verified_at',
         'google_id',
         'facebook_id',
+        'wallet_id',
         'avatar',
         'provider',
         'provider_id',

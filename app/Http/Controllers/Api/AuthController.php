@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Laravel\Socialite\Facades\Socialite;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Http;
 use App\Services\VerificationService;
 
 class AuthController extends Controller
@@ -753,6 +754,130 @@ class AuthController extends Controller
             'status' => 'success',
             'message' => 'Password changed successfully'
         ]);
+    }
+
+    /**
+     * Handle Wallet.az OAuth callback.
+     */
+    public function walletCallback(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'code' => 'required|string',
+            'code_verifier' => 'required|string',
+            'redirect_uri' => 'required|string|url',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            $walletApiUrl = env('WALLET_API_URL', 'http://100.89.150.50:8011/api');
+            $clientId = env('WALLET_CLIENT_ID');
+            $clientSecret = env('WALLET_CLIENT_SECRET');
+
+            // Exchange authorization code for tokens
+            $tokenResponse = Http::post("{$walletApiUrl}/oauth/token", [
+                'grant_type' => 'authorization_code',
+                'client_id' => $clientId,
+                'client_secret' => $clientSecret,
+                'code' => $request->code,
+                'redirect_uri' => $request->redirect_uri,
+                'code_verifier' => $request->code_verifier,
+            ]);
+
+            if (!$tokenResponse->successful()) {
+                Log::error('Wallet OAuth token exchange failed', [
+                    'status' => $tokenResponse->status(),
+                    'body' => $tokenResponse->body()
+                ]);
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Failed to exchange authorization code'
+                ], 400);
+            }
+
+            $tokens = $tokenResponse->json();
+
+            // Fetch user data from Wallet.az
+            $userResponse = Http::withToken($tokens['access_token'])
+                ->get("{$walletApiUrl}/oauth/user");
+
+            if (!$userResponse->successful()) {
+                Log::error('Wallet OAuth user fetch failed', [
+                    'status' => $userResponse->status(),
+                    'body' => $userResponse->body()
+                ]);
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Failed to fetch user data'
+                ], 400);
+            }
+
+            $walletUser = $userResponse->json()['data'];
+
+            // Find or create user in our system
+            $user = User::where('wallet_id', $walletUser['id'])
+                ->orWhere('email', $walletUser['email'])
+                ->first();
+
+            $verification = $walletUser['verification'] ?? [];
+            $emailVerified = $verification['email_verified'] ?? false;
+            $phoneVerified = $verification['phone_verified'] ?? false;
+
+            if (!$user) {
+                $user = User::create([
+                    'name' => $walletUser['name'],
+                    'email' => $walletUser['email'] ?? null,
+                    'phone' => $walletUser['phone'] ?? null,
+                    'avatar' => $walletUser['avatar'] ?? null,
+                    'wallet_id' => $walletUser['id'],
+                    'provider' => 'wallet',
+                    'provider_id' => (string) $walletUser['id'],
+                    'email_verified_at' => $emailVerified ? now() : null,
+                    'phone_verified_at' => $phoneVerified ? now() : null,
+                    'locale' => 'az',
+                    'timezone' => 'Asia/Baku',
+                ]);
+            } else {
+                // Update user with latest data from Wallet.az
+                $user->update([
+                    'wallet_id' => $walletUser['id'],
+                    'name' => $walletUser['name'],
+                    'avatar' => $walletUser['avatar'] ?? $user->avatar,
+                    'phone' => $walletUser['phone'] ?? $user->phone,
+                    'email_verified_at' => $emailVerified ? ($user->email_verified_at ?? now()) : $user->email_verified_at,
+                    'phone_verified_at' => $phoneVerified ? ($user->phone_verified_at ?? now()) : $user->phone_verified_at,
+                ]);
+            }
+
+            // Create token for our app
+            $token = $user->createToken('auth-token')->plainTextToken;
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Login successful',
+                'data' => [
+                    'user' => $user,
+                    'token' => $token,
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Wallet OAuth error', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Authentication failed: ' . $e->getMessage()
+            ], 500);
+        }
     }
 
     /**

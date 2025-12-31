@@ -40,6 +40,9 @@ Route::prefix('auth')->group(function () {
         ->where('provider', 'google|facebook');
     Route::get('/{provider}/callback', [AuthController::class, 'handleProviderCallback'])
         ->where('provider', 'google|facebook');
+
+    // Wallet.az OAuth
+    Route::post('/wallet/callback', [AuthController::class, 'walletCallback']);
 });
 
 // Public alert parsing (no auth required for better UX)
