@@ -15,7 +15,7 @@ use App\Models\Video;
 use App\Models\Image;
 
 Route::get('/', function () {
-    return response()->json(['message' => 'Kredit.az API', 'status' => 'running']);
+    return response()->json(['message' => 'Alert.az API', 'status' => 'running']);
 });
 
 // Serve the React admin panel for all /admin routes
