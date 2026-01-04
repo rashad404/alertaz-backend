@@ -757,7 +757,7 @@ class AuthController extends Controller
     }
 
     /**
-     * Handle Wallet.az OAuth callback.
+     * Handle Kimlik.az OAuth callback.
      */
     public function walletCallback(Request $request)
     {
@@ -803,7 +803,7 @@ class AuthController extends Controller
 
             $tokens = $tokenResponse->json();
 
-            // Fetch user data from Wallet.az
+            // Fetch user data from Kimlik.az
             $userResponse = Http::withToken($tokens['access_token'])
                 ->get("{$walletApiUrl}/oauth/user");
 
@@ -850,7 +850,7 @@ class AuthController extends Controller
                     'timezone' => 'Asia/Baku',
                 ]);
             } else {
-                // Update user with latest data from Wallet.az
+                // Update user with latest data from Kimlik.az
                 $user->update([
                     'wallet_id' => $walletUser['id'],
                     'wallet_access_token' => $tokens['access_token'],
@@ -890,25 +890,25 @@ class AuthController extends Controller
     }
 
     /**
-     * Sync user profile from Wallet.az.
-     * Called when user returns from editing profile on Wallet.az.
+     * Sync user profile from Kimlik.az.
+     * Called when user returns from editing profile on Kimlik.az.
      */
     public function syncFromWallet(Request $request)
     {
         $user = $request->user();
 
-        // Only for Wallet.az users
+        // Only for Kimlik.az users
         if (!$user->wallet_id || !$user->wallet_access_token) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Not a Wallet.az user'
+                'message' => 'Not a Kimlik.az user'
             ], 400);
         }
 
         try {
             $walletApiUrl = env('WALLET_API_URL', 'http://100.89.150.50:8011/api');
 
-            // Fetch fresh user data from Wallet.az
+            // Fetch fresh user data from Kimlik.az
             $userResponse = Http::withToken($user->wallet_access_token)
                 ->get("{$walletApiUrl}/oauth/user");
 
@@ -919,7 +919,7 @@ class AuthController extends Controller
                     if (!$refreshed) {
                         return response()->json([
                             'status' => 'error',
-                            'message' => 'Failed to refresh Wallet.az token'
+                            'message' => 'Failed to refresh Kimlik.az token'
                         ], 401);
                     }
 
@@ -930,13 +930,13 @@ class AuthController extends Controller
                     if (!$userResponse->successful()) {
                         return response()->json([
                             'status' => 'error',
-                            'message' => 'Failed to fetch user data from Wallet.az'
+                            'message' => 'Failed to fetch user data from Kimlik.az'
                         ], 400);
                     }
                 } else {
                     return response()->json([
                         'status' => 'error',
-                        'message' => 'Failed to fetch user data from Wallet.az'
+                        'message' => 'Failed to fetch user data from Kimlik.az'
                     ], 400);
                 }
             }
@@ -946,7 +946,7 @@ class AuthController extends Controller
             $emailVerified = $verification['email_verified'] ?? false;
             $phoneVerified = $verification['phone_verified'] ?? false;
 
-            // Update user with fresh data from Wallet.az
+            // Update user with fresh data from Kimlik.az
             $user->update([
                 'name' => $walletUser['name'],
                 'avatar' => $walletUser['avatar'] ?? $user->avatar,
@@ -960,7 +960,7 @@ class AuthController extends Controller
 
             return response()->json([
                 'status' => 'success',
-                'message' => 'Profile synced from Wallet.az',
+                'message' => 'Profile synced from Kimlik.az',
                 'data' => $user
             ]);
 
@@ -978,7 +978,7 @@ class AuthController extends Controller
     }
 
     /**
-     * Refresh Wallet.az access token.
+     * Refresh Kimlik.az access token.
      */
     protected function refreshWalletToken(User $user): bool
     {

@@ -13,7 +13,7 @@ use Symfony\Component\HttpFoundation\Response;
  *
  * Supports two authentication methods:
  * 1. Sanctum session tokens (for dashboard logged-in users)
- * 2. Client permanent API tokens (for partner services like wallet.az)
+ * 2. Client permanent API tokens (for partner services like kimlik.az)
  *
  * Partner tokens are permanent SHA256 hashes stored in clients.api_token
  * and do NOT change on each login.

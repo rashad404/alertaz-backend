@@ -42,11 +42,11 @@ Route::prefix('auth')->group(function () {
     Route::get('/{provider}/callback', [AuthController::class, 'handleProviderCallback'])
         ->where('provider', 'google|facebook');
 
-    // Wallet.az OAuth
+    // Kimlik.az OAuth
     Route::post('/wallet/callback', [AuthController::class, 'walletCallback']);
 });
 
-// Wallet.az Webhook (public - for payment notifications)
+// Kimlik.az Webhook (public - for payment notifications)
 Route::post('/webhooks/wallet', [WalletController::class, 'webhook']);
 
 // Public alert parsing (no auth required for better UX)
@@ -64,7 +64,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/user/sync-from-wallet', [AuthController::class, 'syncFromWallet']);
     Route::post('/auth/logout', [AuthController::class, 'logout']);
 
-    // Wallet.az Top Up
+    // Kimlik.az Top Up
     Route::post('/wallet/topup', [WalletController::class, 'topup']);
 
     // Alert Types
@@ -147,7 +147,7 @@ Route::get('/notifications/vapid-public-key', [NotificationController::class, 'g
 Route::post('/webhooks/sms/delivery', [SmsApiController::class, 'handleWebhook']);
 
 // SMS/Email API Routes (supports both Sanctum session tokens AND permanent client tokens)
-// This allows partners like wallet.az to use permanent API tokens
+// This allows partners like kimlik.az to use permanent API tokens
 Route::middleware('auth.sms')->group(function () {
     // SMS API Routes
     Route::prefix('sms')->group(function () {

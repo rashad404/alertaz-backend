@@ -18,7 +18,7 @@ class WalletController extends Controller
     }
 
     /**
-     * Initiate a topup from Wallet.az
+     * Initiate a topup from Kimlik.az
      */
     public function topup(Request $request)
     {
@@ -31,14 +31,14 @@ class WalletController extends Controller
         if (!$user->wallet_id) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'You need to connect your Wallet.az account first'
+                'message' => 'You need to connect your Kimlik.az account first'
             ], 400);
         }
 
         if (!$user->wallet_access_token) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Wallet.az session expired. Please reconnect your account.',
+                'message' => 'Kimlik.az session expired. Please reconnect your account.',
                 'reconnect_required' => true
             ], 401);
         }
@@ -49,7 +49,7 @@ class WalletController extends Controller
                 $this->refreshWalletToken($user);
             }
 
-            // Create charge request to Wallet.az
+            // Create charge request to Kimlik.az
             $response = Http::withToken($user->wallet_access_token)
                 ->post("{$this->walletApiUrl}/oauth/charge", [
                     'amount' => $validated['amount'],
@@ -58,7 +58,7 @@ class WalletController extends Controller
                 ]);
 
             if (!$response->successful()) {
-                Log::error('Wallet.az charge request failed', [
+                Log::error('Kimlik.az charge request failed', [
                     'user_id' => $user->id,
                     'status' => $response->status(),
                     'body' => $response->body()
@@ -70,7 +70,7 @@ class WalletController extends Controller
                 if ($response->status() === 401) {
                     return response()->json([
                         'status' => 'error',
-                        'message' => 'Wallet.az session expired. Please reconnect your account.',
+                        'message' => 'Kimlik.az session expired. Please reconnect your account.',
                         'reconnect_required' => true
                     ], 401);
                 }
@@ -83,7 +83,7 @@ class WalletController extends Controller
 
             $data = $response->json();
 
-            Log::info('Wallet.az charge created', [
+            Log::info('Kimlik.az charge created', [
                 'user_id' => $user->id,
                 'amount' => $validated['amount'],
                 'charge_data' => $data
@@ -95,7 +95,7 @@ class WalletController extends Controller
             ]);
 
         } catch (\Exception $e) {
-            Log::error('Wallet.az topup error', [
+            Log::error('Kimlik.az topup error', [
                 'user_id' => $user->id,
                 'error' => $e->getMessage()
             ]);
@@ -108,7 +108,7 @@ class WalletController extends Controller
     }
 
     /**
-     * Webhook handler for Wallet.az charge events
+     * Webhook handler for Kimlik.az charge events
      */
     public function webhook(Request $request)
     {
@@ -120,7 +120,7 @@ class WalletController extends Controller
             $expectedSignature = hash_hmac('sha256', json_encode($request->all()), $webhookSecret);
 
             if (!hash_equals($expectedSignature, $signature ?? '')) {
-                Log::warning('Invalid webhook signature from Wallet.az', [
+                Log::warning('Invalid webhook signature from Kimlik.az', [
                     'expected' => $expectedSignature,
                     'received' => $signature
                 ]);
@@ -135,7 +135,7 @@ class WalletController extends Controller
         $userId = $request->input('user_id');
         $referenceId = $request->input('reference_id');
 
-        Log::info('Wallet.az webhook received', [
+        Log::info('Kimlik.az webhook received', [
             'event' => $event,
             'charge_id' => $chargeId,
             'amount' => $amount,
@@ -187,7 +187,7 @@ class WalletController extends Controller
     }
 
     /**
-     * Refresh Wallet.az access token
+     * Refresh Kimlik.az access token
      */
     protected function refreshWalletToken(User $user): bool
     {
@@ -203,7 +203,7 @@ class WalletController extends Controller
             ]);
 
             if (!$response->successful()) {
-                Log::error('Failed to refresh Wallet.az token', [
+                Log::error('Failed to refresh Kimlik.az token', [
                     'user_id' => $user->id,
                     'status' => $response->status()
                 ]);
@@ -221,7 +221,7 @@ class WalletController extends Controller
             return true;
 
         } catch (\Exception $e) {
-            Log::error('Failed to refresh Wallet.az token', [
+            Log::error('Failed to refresh Kimlik.az token', [
                 'user_id' => $user->id,
                 'error' => $e->getMessage()
             ]);
