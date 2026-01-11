@@ -134,8 +134,10 @@ class EmailService
         );
 
         try {
-            // Send via Laravel Mail
-            Mail::send([], [], function ($mail) use ($toEmail, $toName, $fromEmail, $fromName, $subject, $bodyHtml, $bodyText) {
+            // Send via Laravel Mail with SES Configuration Set for tracking
+            $sesConfigSet = config('services.ses.configuration_set');
+
+            Mail::send([], [], function ($mail) use ($toEmail, $toName, $fromEmail, $fromName, $subject, $bodyHtml, $bodyText, $sesConfigSet) {
                 $mail->to($toEmail, $toName)
                     ->from($fromEmail, $fromName)
                     ->subject($subject)
@@ -143,6 +145,11 @@ class EmailService
 
                 if ($bodyText) {
                     $mail->text($bodyText);
+                }
+
+                // Attach SES Configuration Set for delivery tracking
+                if ($sesConfigSet) {
+                    $mail->getHeaders()->addTextHeader('X-SES-CONFIGURATION-SET', $sesConfigSet);
                 }
             });
 
