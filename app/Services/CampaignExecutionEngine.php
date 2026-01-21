@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Helpers\EmailValidator;
 use App\Models\Campaign;
 use App\Models\SmsMessage;
 use App\Models\EmailMessage;
@@ -309,6 +310,22 @@ class CampaignExecutionEngine
      */
     protected function sendEmailToContact(Campaign $campaign, Contact $contact, User $user, bool $mockMode): array
     {
+        // Validate email before sending (uses attributes.email primarily, then email column as fallback)
+        $email = $contact->getEmailForValidation();
+        if (!EmailValidator::isValid($email)) {
+            Log::warning('Skipping invalid email', [
+                'contact_id' => $contact->id,
+                'email' => $email,
+                'reason' => EmailValidator::getError($email),
+            ]);
+            return [
+                'success' => false,
+                'delivered' => false,
+                'cost' => 0,
+                'insufficient_balance' => false,
+            ];
+        }
+
         try {
             // Render email subject and body templates
             $subject = $this->templateRenderer->render(
@@ -349,7 +366,7 @@ class CampaignExecutionEngine
                 // Real mode: send email
                 $emailService = $this->getEmailService();
                 $result = $emailService->send([
-                    'to' => $contact->email,
+                    'to' => $email,
                     'subject' => $subject,
                     'body_html' => $body,
                     'from_name' => $campaign->sender,
@@ -376,7 +393,7 @@ class CampaignExecutionEngine
                 'client_id' => $campaign->client_id,
                 'campaign_id' => $campaign->id,
                 'contact_id' => $contact->id,
-                'to_email' => $contact->email,
+                'to_email' => $email,
                 'subject' => $subject,
                 'body_html' => $body,
                 'from_name' => $campaign->sender,
@@ -396,7 +413,7 @@ class CampaignExecutionEngine
             ];
 
         } catch (\Exception $e) {
-            Log::error("Failed to send email to {$contact->email}: " . $e->getMessage());
+            Log::error("Failed to send email to {$email}: " . $e->getMessage());
 
             // Create failed email message record
             EmailMessage::create([
@@ -405,7 +422,7 @@ class CampaignExecutionEngine
                 'client_id' => $campaign->client_id,
                 'campaign_id' => $campaign->id,
                 'contact_id' => $contact->id,
-                'to_email' => $contact->email,
+                'to_email' => $email,
                 'subject' => '',
                 'body_html' => '',
                 'from_name' => $campaign->sender,
@@ -633,12 +650,23 @@ class CampaignExecutionEngine
             $query->whereNotIn('id', $cooldownContactIds);
         }
 
-        // Get total count before pagination
-        $totalPlanned = $query->count();
-
-        // Paginate
-        $offset = ($page - 1) * $perPage;
-        $contacts = $query->skip($offset)->take($perPage)->get();
+        // For email campaigns, filter out invalid emails and compute accurate count
+        if ($campaign->requiresEmail()) {
+            $allContacts = $query->get();
+            $filteredContacts = $allContacts->filter(function ($contact) {
+                $email = $contact->getEmailForValidation();
+                return EmailValidator::isValid($email);
+            });
+            $totalPlanned = $filteredContacts->count();
+            $offset = ($page - 1) * $perPage;
+            $contacts = $filteredContacts->slice($offset, $perPage)->values();
+        } else {
+            // Get total count before pagination
+            $totalPlanned = $query->count();
+            // Paginate
+            $offset = ($page - 1) * $perPage;
+            $contacts = $query->skip($offset)->take($perPage)->get();
+        }
 
         // Render messages for this page
         $plannedContacts = [];
@@ -646,7 +674,7 @@ class CampaignExecutionEngine
             $contactData = [
                 'contact_id' => $contact->id,
                 'phone' => $contact->phone,
-                'email' => $contact->email ?? $contact->attributes['email'] ?? null,
+                'email' => $contact->getEmailForValidation(),
                 'message' => null,
                 'email_subject' => null,
                 'email_body' => null,
@@ -728,18 +756,28 @@ class CampaignExecutionEngine
             $query->whereNotIn('id', $cooldownContactIds);
         }
 
-        // Get total planned count (matching - cooldown)
-        $totalCount = $query->count();
-
-        // Get sample contacts for preview
-        $contacts = $query->limit($limit)->get();
+        // For email campaigns, filter out invalid emails
+        if ($campaign->requiresEmail()) {
+            $allContacts = $query->get();
+            $filteredContacts = $allContacts->filter(function ($contact) {
+                $email = $contact->getEmailForValidation();
+                return EmailValidator::isValid($email);
+            });
+            $totalCount = $filteredContacts->count();
+            $contacts = $filteredContacts->take($limit)->values();
+        } else {
+            // Get total planned count (matching - cooldown)
+            $totalCount = $query->count();
+            // Get sample contacts for preview
+            $contacts = $query->limit($limit)->get();
+        }
 
         $previews = [];
 
         foreach ($contacts as $contact) {
             $preview = [
                 'phone' => $contact->phone,
-                'email' => $contact->email,
+                'email' => $contact->getEmailForValidation(),
                 'attributes' => $contact->attributes,
                 'can_receive_sms' => $contact->canReceiveSms(),
                 'can_receive_email' => $contact->canReceiveEmail(),

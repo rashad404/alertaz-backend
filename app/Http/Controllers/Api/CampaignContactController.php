@@ -125,8 +125,9 @@ class CampaignContactController extends Controller
 
         $validator = Validator::make($request->all(), [
             'phone' => ['nullable', 'string', 'regex:/^994[0-9]{9}$/'],
-            'email' => ['nullable', 'email', 'max:255'],
+            // Note: email is now expected in attributes.email, not at root level
             'attributes' => ['required', 'array'],
+            'attributes.email' => ['nullable', 'email', 'max:255'],
         ]);
 
         if ($validator->fails()) {
@@ -138,38 +139,33 @@ class CampaignContactController extends Controller
         }
 
         $phone = $request->input('phone');
-        $email = $request->input('email');
+        $attributes = $request->input('attributes');
+        $attributesEmail = $attributes['email'] ?? null;
 
-        // At least one of phone or email is required
-        if (empty($phone) && empty($email)) {
+        // At least one of phone or attributes.email is required
+        if (empty($phone) && empty($attributesEmail)) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Validation failed',
-                'errors' => ['contact' => ['Phone or email is required']],
+                'errors' => ['contact' => ['Phone or email (in attributes) is required']],
             ], 422);
         }
-
-        $attributes = $request->input('attributes');
 
         // Sanitize date attributes
         $attributes = $this->sanitizeAttributes($client->id, $attributes);
 
-        // Build unique identifier - prefer phone, then email
+        // Build unique identifier - use phone only
         $identifier = [];
         $identifier['client_id'] = $client->id;
         if ($phone) {
             $identifier['phone'] = $phone;
-        } elseif ($email) {
-            $identifier['email'] = $email;
         }
+        // Note: email column is no longer used, email is stored in attributes['email']
 
-        // Build update data
+        // Build update data - email is in attributes, not as separate column
         $updateData = ['attributes' => $attributes];
         if ($phone) {
             $updateData['phone'] = $phone;
-        }
-        if ($email) {
-            $updateData['email'] = $email;
         }
 
         // Find or create contact
@@ -183,7 +179,7 @@ class CampaignContactController extends Controller
             'data' => [
                 'contact_id' => $contact->id,
                 'phone' => $contact->phone,
-                'email' => $contact->email,
+                'email' => $attributes['email'] ?? null,
                 'created' => $wasRecentlyCreated,
                 'updated' => !$wasRecentlyCreated,
             ],
@@ -203,8 +199,9 @@ class CampaignContactController extends Controller
         $validator = Validator::make($request->all(), [
             'contacts' => ['required', 'array', 'min:1', 'max:1000'],
             'contacts.*.phone' => ['nullable', 'string', 'regex:/^994[0-9]{9}$/'],
-            'contacts.*.email' => ['nullable', 'email', 'max:255'],
+            // Note: email is now expected in attributes.email, not at root level
             'contacts.*.attributes' => ['required', 'array'],
+            'contacts.*.attributes.email' => ['nullable', 'email', 'max:255'],
         ]);
 
         if ($validator->fails()) {
@@ -222,10 +219,11 @@ class CampaignContactController extends Controller
 
         foreach ($request->input('contacts') as $index => $contactData) {
             $phone = $contactData['phone'] ?? null;
-            $email = $contactData['email'] ?? null;
+            // Email should come from attributes['email'], not root level
+            $attributesEmail = $contactData['attributes']['email'] ?? null;
 
-            // Skip contacts without phone or email
-            if (empty($phone) && empty($email)) {
+            // Skip contacts without phone or email (check attributes.email)
+            if (empty($phone) && empty($attributesEmail)) {
                 $skipped++;
                 continue;
             }
@@ -234,22 +232,18 @@ class CampaignContactController extends Controller
                 // Sanitize date attributes
                 $attributes = $this->sanitizeAttributes($client->id, $contactData['attributes']);
 
-                // Build unique identifier - prefer phone, then email
+                // Build unique identifier - prefer phone, then attributes.email
                 $identifier = [];
                 $identifier['client_id'] = $client->id;
                 if ($phone) {
                     $identifier['phone'] = $phone;
-                } elseif ($email) {
-                    $identifier['email'] = $email;
                 }
+                // Note: email column is no longer used, email is stored in attributes['email']
 
-                // Build update data
+                // Build update data - email is in attributes, not as separate column
                 $updateData = ['attributes' => $attributes];
                 if ($phone) {
                     $updateData['phone'] = $phone;
-                }
-                if ($email) {
-                    $updateData['email'] = $email;
                 }
 
                 $contact = Contact::updateOrCreate($identifier, $updateData);

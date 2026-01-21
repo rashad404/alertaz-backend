@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Helpers\EmailValidator;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -11,7 +12,6 @@ class Contact extends Model
     protected $fillable = [
         'client_id',
         'phone',
-        'email',
         'attributes',
     ];
 
@@ -56,7 +56,7 @@ class Contact extends Model
      */
     public function hasEmail(): bool
     {
-        return !empty($this->email);
+        return !empty($this->getEmailForValidation());
     }
 
     /**
@@ -72,6 +72,20 @@ class Contact extends Model
      */
     public function canReceiveEmail(): bool
     {
-        return $this->hasEmail() && filter_var($this->email, FILTER_VALIDATE_EMAIL);
+        $email = $this->getEmailForValidation();
+        return EmailValidator::isValid($email);
+    }
+
+    /**
+     * Get email from attributes JSON
+     */
+    public function getEmailForValidation(): ?string
+    {
+        $attrs = $this->getAttributeValue('attributes');
+        if (is_array($attrs) && !empty($attrs['email'])) {
+            return $attrs['email'];
+        }
+
+        return null;
     }
 }
