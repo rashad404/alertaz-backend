@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Campaign;
 use App\Models\SavedSegment;
 use App\Models\SmsMessage;
+use App\Models\EmailMessage;
 use App\Models\UserSender;
 use App\Services\SegmentQueryBuilder;
 use App\Services\CampaignExecutionEngine;
@@ -844,20 +845,79 @@ class CampaignController extends Controller
             ], 404);
         }
 
-        $messages = SmsMessage::where('campaign_id', $id)
-            ->with('contact:id,phone,attributes')
-            ->orderBy('created_at', 'desc')
-            ->paginate($perPage);
+        // Fetch messages based on campaign channel
+        $smsMessages = collect();
+        $emailMessages = collect();
+        $smsPagination = null;
+        $emailPagination = null;
+
+        if ($campaign->channel === 'sms' || $campaign->channel === 'both') {
+            $smsQuery = SmsMessage::where('campaign_id', $id)
+                ->with('contact:id,phone,attributes')
+                ->orderBy('created_at', 'desc')
+                ->paginate($perPage);
+
+            $smsMessages = collect($smsQuery->items())->map(function ($msg) {
+                return [
+                    'id' => $msg->id,
+                    'type' => 'sms',
+                    'recipient' => $msg->phone,
+                    'content' => $msg->message,
+                    'status' => $msg->status,
+                    'cost' => $msg->cost,
+                    'is_test' => $msg->is_test,
+                    'sent_at' => $msg->sent_at,
+                    'created_at' => $msg->created_at,
+                    'contact' => $msg->contact,
+                ];
+            });
+            $smsPagination = $smsQuery;
+        }
+
+        if ($campaign->channel === 'email' || $campaign->channel === 'both') {
+            $emailQuery = EmailMessage::where('campaign_id', $id)
+                ->with('contact:id,phone,attributes')
+                ->orderBy('created_at', 'desc')
+                ->paginate($perPage);
+
+            $emailMessages = collect($emailQuery->items())->map(function ($msg) {
+                return [
+                    'id' => $msg->id,
+                    'type' => 'email',
+                    'recipient' => $msg->to_email,
+                    'content' => $msg->subject,
+                    'body' => $msg->body_html,
+                    'status' => $msg->status,
+                    'cost' => $msg->cost,
+                    'is_test' => $msg->is_test,
+                    'sent_at' => $msg->sent_at,
+                    'created_at' => $msg->created_at,
+                    'contact' => $msg->contact,
+                ];
+            });
+            $emailPagination = $emailQuery;
+        }
+
+        // Merge and sort by created_at
+        $allMessages = $smsMessages->concat($emailMessages)
+            ->sortByDesc('created_at')
+            ->values()
+            ->take($perPage);
+
+        // Calculate combined pagination
+        $totalSms = $smsPagination ? $smsPagination->total() : 0;
+        $totalEmail = $emailPagination ? $emailPagination->total() : 0;
+        $total = $totalSms + $totalEmail;
 
         return response()->json([
             'status' => 'success',
             'data' => [
-                'messages' => $messages->items(),
+                'messages' => $allMessages,
                 'pagination' => [
-                    'current_page' => $messages->currentPage(),
-                    'last_page' => $messages->lastPage(),
-                    'per_page' => $messages->perPage(),
-                    'total' => $messages->total(),
+                    'current_page' => 1,
+                    'last_page' => max(1, ceil($total / $perPage)),
+                    'per_page' => $perPage,
+                    'total' => $total,
                 ],
             ],
         ], 200);
@@ -1229,10 +1289,19 @@ class CampaignController extends Controller
             ], 404);
         }
 
-        $validator = \Illuminate\Support\Facades\Validator::make($request->all(), [
-            'phone' => ['required', 'string', 'regex:/^994[0-9]{9}$/'],
+        // Build validation rules based on campaign channel
+        $rules = [
             'sample_contact_id' => ['nullable', 'integer'],
-        ]);
+        ];
+
+        if ($campaign->requiresPhone()) {
+            $rules['phone'] = ['nullable', 'string', 'regex:/^994[0-9]{9}$/'];
+        }
+        if ($campaign->requiresEmail()) {
+            $rules['email'] = ['nullable', 'email', 'max:255'];
+        }
+
+        $validator = \Illuminate\Support\Facades\Validator::make($request->all(), $rules);
 
         if ($validator->fails()) {
             return response()->json([
@@ -1243,7 +1312,29 @@ class CampaignController extends Controller
         }
 
         $phone = $request->input('phone');
+        $email = $request->input('email');
         $sampleContactId = $request->input('sample_contact_id');
+
+        // Validate that at least one target is provided based on channel
+        if ($campaign->requiresPhone() && $campaign->requiresEmail()) {
+            if (empty($phone) && empty($email)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Phone or email is required for this campaign',
+                ], 422);
+            }
+        } elseif ($campaign->requiresPhone() && empty($phone)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Phone is required for SMS campaigns',
+            ], 422);
+        } elseif ($campaign->requiresEmail() && empty($email)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Email is required for email campaigns',
+            ], 422);
+        }
+
         $user = $campaign->getOwnerUser();
 
         if (!$user) {
@@ -1275,48 +1366,87 @@ class CampaignController extends Controller
         }
 
         $templateRenderer = app(\App\Services\TemplateRenderer::class);
+        $results = [
+            'sms' => null,
+            'email' => null,
+        ];
+
+        // Send SMS if campaign requires phone and phone provided
+        if ($campaign->requiresPhone() && $phone) {
+            $results['sms'] = $this->sendTestSms($campaign, $user, $sampleContact, $phone, $templateRenderer);
+        }
+
+        // Send Email if campaign requires email and email provided
+        if ($campaign->requiresEmail() && $email) {
+            $results['email'] = $this->sendTestEmail($campaign, $user, $sampleContact, $email, $templateRenderer);
+        }
+
+        // Determine overall status
+        $allSuccess = true;
+        $anySuccess = false;
+        foreach ($results as $result) {
+            if ($result !== null) {
+                if ($result['status'] === 'sent') {
+                    $anySuccess = true;
+                } else {
+                    $allSuccess = false;
+                }
+            }
+        }
+
+        return response()->json([
+            'status' => $anySuccess ? 'success' : 'error',
+            'message' => $allSuccess ? 'Test sent successfully' : ($anySuccess ? 'Partial success' : 'Failed to send test'),
+            'data' => [
+                'sms' => $results['sms'],
+                'email' => $results['email'],
+                'sample_contact_id' => $sampleContact->id,
+            ],
+        ], $anySuccess ? 200 : 500);
+    }
+
+    /**
+     * Send test SMS
+     */
+    protected function sendTestSms(Campaign $campaign, $user, $sampleContact, string $phone, $templateRenderer): array
+    {
         $smsService = app(\App\Services\QuickSmsService::class);
         $costPerSms = config('app.sms_cost_per_message', 0.04);
+        $globalTestMode = config('services.quicksms.test_mode', false);
 
         // Render message
         try {
-            $message = $templateRenderer->renderStrict($campaign->message_template, $sampleContact);
+            $message = $templateRenderer->renderStrict($campaign->message_template ?? '', $sampleContact);
         } catch (\App\Exceptions\TemplateRenderException $e) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Template rendering failed',
-                'code' => 'TEMPLATE_ERROR',
-                'data' => [
-                    'unresolved_variables' => $e->getUnresolvedVariables(),
-                ],
-            ], 422);
+            return [
+                'phone' => $phone,
+                'status' => 'failed',
+                'error' => 'Template rendering failed: ' . implode(', ', $e->getUnresolvedVariables()),
+            ];
         }
 
         $message = $templateRenderer->sanitizeForSMS($message);
         $segments = $templateRenderer->calculateSMSSegments($message);
         $cost = $segments * $costPerSms;
 
-        // Check if test mode
-        $globalTestMode = config('services.quicksms.test_mode', false);
-
         // Check balance
         if (!$globalTestMode && $user->balance < $cost) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Insufficient balance',
-                'code' => 'INSUFFICIENT_BALANCE',
-                'data' => [
-                    'required' => $cost,
-                    'available' => (float) $user->balance,
-                ],
-            ], 402);
+            return [
+                'phone' => $phone,
+                'message' => $message,
+                'segments' => $segments,
+                'cost' => $cost,
+                'status' => 'failed',
+                'error' => 'Insufficient balance',
+            ];
         }
 
         // Send SMS
+        $providerTransactionId = null;
         if ($globalTestMode) {
             $status = 'sent';
             $error = null;
-            $transactionId = 'test_' . time();
+            // Don't deduct balance in test mode
         } else {
             $unicode = $smsService->requiresUnicode($message);
             $result = $smsService->sendSMS($phone, $message, $campaign->sender, $unicode);
@@ -1324,45 +1454,134 @@ class CampaignController extends Controller
             if ($result['success']) {
                 $status = 'sent';
                 $error = null;
-                $transactionId = $result['transaction_id'] ?? null;
+                $providerTransactionId = $result['transaction_id'] ?? null;
                 $user->deductBalance($cost);
-
-                // Record in sms_messages as test
-                \App\Models\SmsMessage::create([
-                    'user_id' => $campaign->created_by,
-                    'source' => 'campaign',
-                    'client_id' => $campaign->client_id,
-                    'campaign_id' => $campaign->id,
-                    'phone' => $phone,
-                    'message' => $message,
-                    'sender' => $campaign->sender,
-                    'cost' => $cost,
-                    'status' => 'sent',
-                    'is_test' => true,
-                    'provider_transaction_id' => $transactionId,
-                    'sent_at' => now(),
-                ]);
             } else {
                 $status = 'failed';
                 $error = $result['error_message'] ?? 'Unknown error';
-                $transactionId = null;
             }
         }
 
-        return response()->json([
-            'status' => $status === 'sent' ? 'success' : 'error',
-            'message' => $status === 'sent' ? 'Test SMS sent successfully' : 'Failed to send test SMS',
-            'data' => [
+        // Log the test SMS message (both in test mode and real mode)
+        if ($status === 'sent') {
+            \App\Models\SmsMessage::create([
+                'user_id' => $campaign->created_by,
+                'source' => 'campaign',
+                'client_id' => $campaign->client_id,
+                'campaign_id' => $campaign->id,
                 'phone' => $phone,
                 'message' => $message,
-                'segments' => $segments,
-                'cost' => $cost,
-                'status' => $status,
-                'error' => $error,
-                'sample_contact_id' => $sampleContact->id,
-                'is_test_mode' => $globalTestMode,
-            ],
-        ], $status === 'sent' ? 200 : 500);
+                'sender' => $campaign->sender,
+                'cost' => $globalTestMode ? 0 : $cost,
+                'status' => 'sent',
+                'is_test' => true,
+                'provider_transaction_id' => $providerTransactionId,
+                'sent_at' => now(),
+            ]);
+        }
+
+        return [
+            'phone' => $phone,
+            'message' => $message,
+            'segments' => $segments,
+            'cost' => ($status === 'sent' && !$globalTestMode) ? $cost : 0,
+            'status' => $status,
+            'error' => $error,
+            'test_mode' => $globalTestMode,
+        ];
+    }
+
+    /**
+     * Send test Email
+     */
+    protected function sendTestEmail(Campaign $campaign, $user, $sampleContact, string $email, $templateRenderer): array
+    {
+        $costPerEmail = config('app.email_cost_per_message', 0.01);
+        $globalTestMode = config('services.quicksms.test_mode', false);
+
+        // Render subject and body
+        try {
+            $subject = $templateRenderer->renderStrict($campaign->email_subject_template ?? '', $sampleContact);
+            $body = $templateRenderer->renderStrict($campaign->email_body_template ?? '', $sampleContact);
+        } catch (\App\Exceptions\TemplateRenderException $e) {
+            return [
+                'email' => $email,
+                'status' => 'failed',
+                'error' => 'Template rendering failed: ' . implode(', ', $e->getUnresolvedVariables()),
+            ];
+        }
+
+        $cost = $costPerEmail;
+
+        // Check balance
+        if (!$globalTestMode && $user->balance < $cost) {
+            return [
+                'email' => $email,
+                'subject' => $subject,
+                'status' => 'failed',
+                'error' => 'Insufficient balance',
+            ];
+        }
+
+        // Send Email
+        $providerMessageId = null;
+        if ($globalTestMode) {
+            $status = 'sent';
+            $error = null;
+            // Don't deduct balance in test mode
+        } else {
+            try {
+                $emailService = $this->executionEngine->getEmailService();
+                $result = $emailService->send([
+                    'to' => $email,
+                    'subject' => $subject,
+                    'body_html' => $body,
+                    'from_name' => $campaign->sender,
+                ]);
+
+                if ($result['success']) {
+                    $status = 'sent';
+                    $error = null;
+                    $providerMessageId = $result['message_id'] ?? null;
+                    $user->deductBalance($cost);
+                } else {
+                    $status = 'failed';
+                    $error = $result['error'] ?? 'Unknown error';
+                }
+            } catch (\Exception $e) {
+                $status = 'failed';
+                $error = $e->getMessage();
+            }
+        }
+
+        // Log the test email message (both in test mode and real mode)
+        if ($status === 'sent') {
+            \App\Models\EmailMessage::create([
+                'user_id' => $campaign->created_by,
+                'source' => 'campaign',
+                'client_id' => $campaign->client_id,
+                'campaign_id' => $campaign->id,
+                'contact_id' => $sampleContact->id,
+                'to_email' => $email,
+                'subject' => $subject,
+                'body_html' => $body,
+                'from_name' => $campaign->sender,
+                'cost' => $globalTestMode ? 0 : $cost,
+                'status' => 'sent',
+                'is_test' => true,
+                'provider_message_id' => $providerMessageId,
+                'sent_at' => now(),
+            ]);
+        }
+
+        return [
+            'email' => $email,
+            'subject' => $subject,
+            'cost' => ($status === 'sent' && !$globalTestMode) ? $cost : 0,
+            'status' => $status,
+            'error' => $error,
+            'test_mode' => $globalTestMode,
+        ];
     }
 
     /**

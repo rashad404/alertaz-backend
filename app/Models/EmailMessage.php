@@ -13,6 +13,8 @@ class EmailMessage extends Model
         'user_id',
         'source',
         'client_id',
+        'campaign_id',
+        'contact_id',
         'to_email',
         'to_name',
         'from_email',
@@ -54,6 +56,16 @@ class EmailMessage extends Model
     public function client(): BelongsTo
     {
         return $this->belongsTo(Client::class);
+    }
+
+    public function contact(): BelongsTo
+    {
+        return $this->belongsTo(Contact::class);
+    }
+
+    public function campaign(): BelongsTo
+    {
+        return $this->belongsTo(Campaign::class);
     }
 
     public function markAsSent(?string $messageId = null): void
