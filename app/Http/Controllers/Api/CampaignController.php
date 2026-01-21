@@ -124,11 +124,13 @@ class CampaignController extends Controller
         // Get available senders for validation
         $availableSenders = UserSender::getAvailableSenders($client->user_id);
 
+        $channel = $request->input('channel', 'sms');
         $maxMessageLength = config('app.sms_max_message_length', 500);
-        $validator = Validator::make($request->all(), [
+
+        // Build validation rules based on channel
+        $rules = [
             'name' => ['required', 'string', 'max:255'],
-            'sender' => ['required', 'string', 'max:11', 'in:' . implode(',', $availableSenders)],
-            'message_template' => ['required', 'string', 'max:' . $maxMessageLength],
+            'channel' => ['nullable', 'in:sms,email,both'],
             'segment_filter' => ['required', 'array'],
             'segment_filter.logic' => ['nullable', 'in:AND,OR'],
             'segment_filter.conditions' => ['required', 'array', 'min:1'],
@@ -141,7 +143,27 @@ class CampaignController extends Controller
             'ends_at' => ['nullable', 'date', 'after:now'],
             'run_start_hour' => ['nullable', 'integer', 'min:0', 'max:23'],
             'run_end_hour' => ['nullable', 'integer', 'min:0', 'max:23'],
-        ]);
+        ];
+
+        // SMS-specific validation
+        if ($channel === 'sms' || $channel === 'both') {
+            $rules['sender'] = ['required', 'string', 'max:11', 'in:' . implode(',', $availableSenders)];
+            $rules['message_template'] = ['required', 'string', 'max:' . $maxMessageLength];
+        } else {
+            $rules['sender'] = ['nullable', 'string', 'max:255']; // Used as from_name for email
+            $rules['message_template'] = ['nullable', 'string', 'max:' . $maxMessageLength];
+        }
+
+        // Email-specific validation
+        if ($channel === 'email' || $channel === 'both') {
+            $rules['email_subject_template'] = ['required', 'string', 'max:500'];
+            $rules['email_body_template'] = ['required', 'string', 'max:50000'];
+        } else {
+            $rules['email_subject_template'] = ['nullable', 'string', 'max:500'];
+            $rules['email_body_template'] = ['nullable', 'string', 'max:50000'];
+        }
+
+        $validator = Validator::make($request->all(), $rules);
 
         if ($validator->fails()) {
             return response()->json([
@@ -151,13 +173,15 @@ class CampaignController extends Controller
             ], 422);
         }
 
-        // Check for Unicode characters in message_template (only GSM-7 allowed)
-        $messageTemplate = $request->input('message_template');
-        if (mb_strlen($messageTemplate) !== strlen($messageTemplate)) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Message contains special characters. Only Latin characters are allowed for SMS.',
-            ], 422);
+        // Check for Unicode characters in message_template (only GSM-7 allowed for SMS)
+        if (($channel === 'sms' || $channel === 'both') && $request->has('message_template')) {
+            $messageTemplate = $request->input('message_template');
+            if (!empty($messageTemplate) && mb_strlen($messageTemplate) !== strlen($messageTemplate)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'SMS message contains special characters. Only Latin characters are allowed for SMS.',
+                ], 422);
+            }
         }
 
         // Calculate target count
@@ -193,8 +217,11 @@ class CampaignController extends Controller
         $campaign = Campaign::create([
             'client_id' => $client->id,
             'name' => $request->input('name'),
+            'channel' => $channel,
             'sender' => $request->input('sender'),
             'message_template' => $request->input('message_template'),
+            'email_subject_template' => $request->input('email_subject_template'),
+            'email_body_template' => $request->input('email_body_template'),
             'status' => $status,
             'type' => $type,
             'check_interval_minutes' => $isAutomated ? $request->input('check_interval_minutes') : null,
@@ -251,11 +278,17 @@ class CampaignController extends Controller
         // Get available senders for validation
         $availableSenders = UserSender::getAvailableSenders($client->user_id);
 
+        // Determine channel (use existing if not changing)
+        $channel = $request->input('channel', $campaign->channel ?? 'sms');
+
         $maxMessageLength = config('app.sms_max_message_length', 500);
         $validator = Validator::make($request->all(), [
             'name' => ['nullable', 'string', 'max:255'],
-            'sender' => ['nullable', 'string', 'max:11', 'in:' . implode(',', $availableSenders)],
+            'channel' => ['nullable', 'in:sms,email,both'],
+            'sender' => ['nullable', 'string', 'max:255'],
             'message_template' => ['nullable', 'string', 'max:' . $maxMessageLength],
+            'email_subject_template' => ['nullable', 'string', 'max:500'],
+            'email_body_template' => ['nullable', 'string', 'max:50000'],
             'segment_filter' => ['nullable', 'array'],
             'scheduled_at' => ['nullable', 'date', 'after:now'],
             'is_test' => ['nullable', 'boolean'],
@@ -275,13 +308,13 @@ class CampaignController extends Controller
             ], 422);
         }
 
-        // Check for Unicode characters in message_template (only GSM-7 allowed)
-        if ($request->has('message_template')) {
+        // Check for Unicode characters in message_template (only GSM-7 allowed for SMS)
+        if ($request->has('message_template') && ($channel === 'sms' || $channel === 'both')) {
             $messageTemplate = $request->input('message_template');
-            if (mb_strlen($messageTemplate) !== strlen($messageTemplate)) {
+            if (!empty($messageTemplate) && mb_strlen($messageTemplate) !== strlen($messageTemplate)) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Message contains special characters. Only Latin characters are allowed for SMS.',
+                    'message' => 'SMS message contains special characters. Only Latin characters are allowed for SMS.',
                 ], 422);
             }
         }
@@ -291,12 +324,24 @@ class CampaignController extends Controller
             $campaign->name = $request->input('name');
         }
 
+        if ($request->has('channel')) {
+            $campaign->channel = $request->input('channel');
+        }
+
         if ($request->has('sender')) {
             $campaign->sender = $request->input('sender');
         }
 
         if ($request->has('message_template')) {
             $campaign->message_template = $request->input('message_template');
+        }
+
+        if ($request->has('email_subject_template')) {
+            $campaign->email_subject_template = $request->input('email_subject_template');
+        }
+
+        if ($request->has('email_body_template')) {
+            $campaign->email_body_template = $request->input('email_body_template');
         }
 
         if ($request->has('segment_filter')) {
@@ -468,8 +513,8 @@ class CampaignController extends Controller
             ], 404);
         }
 
-        $stats = [
-            'target_count' => $campaign->target_count,
+        // SMS stats
+        $smsStats = [
             'sent_count' => $campaign->sent_count,
             'delivered_count' => $campaign->delivered_count,
             'failed_count' => $campaign->failed_count,
@@ -477,9 +522,39 @@ class CampaignController extends Controller
             'delivery_rate' => $campaign->sent_count > 0
                 ? round(($campaign->delivered_count / $campaign->sent_count) * 100, 2)
                 : 0,
-            'success_rate' => $campaign->target_count > 0
-                ? round(($campaign->delivered_count / $campaign->target_count) * 100, 2)
+        ];
+
+        // Email stats
+        $emailStats = [
+            'sent_count' => $campaign->email_sent_count ?? 0,
+            'delivered_count' => $campaign->email_delivered_count ?? 0,
+            'failed_count' => $campaign->email_failed_count ?? 0,
+            'total_cost' => (float) ($campaign->email_total_cost ?? 0),
+            'delivery_rate' => ($campaign->email_sent_count ?? 0) > 0
+                ? round((($campaign->email_delivered_count ?? 0) / $campaign->email_sent_count) * 100, 2)
                 : 0,
+        ];
+
+        // Combined stats
+        $totalSent = $campaign->sent_count + ($campaign->email_sent_count ?? 0);
+        $totalDelivered = $campaign->delivered_count + ($campaign->email_delivered_count ?? 0);
+        $totalFailed = $campaign->failed_count + ($campaign->email_failed_count ?? 0);
+        $totalCost = (float) $campaign->total_cost + (float) ($campaign->email_total_cost ?? 0);
+
+        $stats = [
+            'target_count' => $campaign->target_count,
+            'sent_count' => $totalSent,
+            'delivered_count' => $totalDelivered,
+            'failed_count' => $totalFailed,
+            'total_cost' => $totalCost,
+            'delivery_rate' => $totalSent > 0
+                ? round(($totalDelivered / $totalSent) * 100, 2)
+                : 0,
+            'success_rate' => $campaign->target_count > 0
+                ? round(($totalDelivered / $campaign->target_count) * 100, 2)
+                : 0,
+            'sms' => $smsStats,
+            'email' => $emailStats,
         ];
 
         return response()->json([
@@ -719,8 +794,11 @@ class CampaignController extends Controller
         $newCampaign = Campaign::create([
             'client_id' => $client->id,
             'name' => $campaign->name . ' (copy)',
+            'channel' => $campaign->channel ?? 'sms',
             'sender' => $campaign->sender,
             'message_template' => $campaign->message_template,
+            'email_subject_template' => $campaign->email_subject_template,
+            'email_body_template' => $campaign->email_body_template,
             'status' => 'draft',
             'type' => $campaign->type,
             'segment_filter' => $campaign->segment_filter,

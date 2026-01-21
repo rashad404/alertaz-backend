@@ -124,7 +124,8 @@ class CampaignContactController extends Controller
         $client = $request->attributes->get('client');
 
         $validator = Validator::make($request->all(), [
-            'phone' => ['required', 'string', 'regex:/^994[0-9]{9}$/'],
+            'phone' => ['nullable', 'string', 'regex:/^994[0-9]{9}$/'],
+            'email' => ['nullable', 'email', 'max:255'],
             'attributes' => ['required', 'array'],
         ]);
 
@@ -137,21 +138,42 @@ class CampaignContactController extends Controller
         }
 
         $phone = $request->input('phone');
+        $email = $request->input('email');
+
+        // At least one of phone or email is required
+        if (empty($phone) && empty($email)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Validation failed',
+                'errors' => ['contact' => ['Phone or email is required']],
+            ], 422);
+        }
+
         $attributes = $request->input('attributes');
 
         // Sanitize date attributes
         $attributes = $this->sanitizeAttributes($client->id, $attributes);
 
+        // Build unique identifier - prefer phone, then email
+        $identifier = [];
+        $identifier['client_id'] = $client->id;
+        if ($phone) {
+            $identifier['phone'] = $phone;
+        } elseif ($email) {
+            $identifier['email'] = $email;
+        }
+
+        // Build update data
+        $updateData = ['attributes' => $attributes];
+        if ($phone) {
+            $updateData['phone'] = $phone;
+        }
+        if ($email) {
+            $updateData['email'] = $email;
+        }
+
         // Find or create contact
-        $contact = Contact::updateOrCreate(
-            [
-                'client_id' => $client->id,
-                'phone' => $phone,
-            ],
-            [
-                'attributes' => $attributes,
-            ]
-        );
+        $contact = Contact::updateOrCreate($identifier, $updateData);
 
         $wasRecentlyCreated = $contact->wasRecentlyCreated;
 
@@ -161,6 +183,7 @@ class CampaignContactController extends Controller
             'data' => [
                 'contact_id' => $contact->id,
                 'phone' => $contact->phone,
+                'email' => $contact->email,
                 'created' => $wasRecentlyCreated,
                 'updated' => !$wasRecentlyCreated,
             ],
@@ -179,7 +202,8 @@ class CampaignContactController extends Controller
 
         $validator = Validator::make($request->all(), [
             'contacts' => ['required', 'array', 'min:1', 'max:1000'],
-            'contacts.*.phone' => ['required', 'string', 'regex:/^994[0-9]{9}$/'],
+            'contacts.*.phone' => ['nullable', 'string', 'regex:/^994[0-9]{9}$/'],
+            'contacts.*.email' => ['nullable', 'email', 'max:255'],
             'contacts.*.attributes' => ['required', 'array'],
         ]);
 
@@ -194,21 +218,41 @@ class CampaignContactController extends Controller
         $created = 0;
         $updated = 0;
         $failed = 0;
+        $skipped = 0;
 
-        foreach ($request->input('contacts') as $contactData) {
+        foreach ($request->input('contacts') as $index => $contactData) {
+            $phone = $contactData['phone'] ?? null;
+            $email = $contactData['email'] ?? null;
+
+            // Skip contacts without phone or email
+            if (empty($phone) && empty($email)) {
+                $skipped++;
+                continue;
+            }
+
             try {
                 // Sanitize date attributes
                 $attributes = $this->sanitizeAttributes($client->id, $contactData['attributes']);
 
-                $contact = Contact::updateOrCreate(
-                    [
-                        'client_id' => $client->id,
-                        'phone' => $contactData['phone'],
-                    ],
-                    [
-                        'attributes' => $attributes,
-                    ]
-                );
+                // Build unique identifier - prefer phone, then email
+                $identifier = [];
+                $identifier['client_id'] = $client->id;
+                if ($phone) {
+                    $identifier['phone'] = $phone;
+                } elseif ($email) {
+                    $identifier['email'] = $email;
+                }
+
+                // Build update data
+                $updateData = ['attributes' => $attributes];
+                if ($phone) {
+                    $updateData['phone'] = $phone;
+                }
+                if ($email) {
+                    $updateData['email'] = $email;
+                }
+
+                $contact = Contact::updateOrCreate($identifier, $updateData);
 
                 if ($contact->wasRecentlyCreated) {
                     $created++;
@@ -228,6 +272,7 @@ class CampaignContactController extends Controller
                 'created' => $created,
                 'updated' => $updated,
                 'failed' => $failed,
+                'skipped' => $skipped,
             ],
         ], 200);
     }
@@ -246,10 +291,11 @@ class CampaignContactController extends Controller
 
         $query = Contact::where('client_id', $client->id);
 
-        // Search by phone or attributes
+        // Search by phone, email or attributes
         if ($search) {
             $query->where(function ($q) use ($search) {
                 $q->where('phone', 'like', "%{$search}%")
+                  ->orWhere('email', 'like', "%{$search}%")
                   ->orWhereRaw("JSON_SEARCH(LOWER(attributes), 'all', LOWER(?)) IS NOT NULL", ["%{$search}%"]);
             });
         }
@@ -323,7 +369,8 @@ class CampaignContactController extends Controller
         $client = $request->attributes->get('client');
 
         $validator = Validator::make($request->all(), [
-            'phone' => ['required', 'string', 'regex:/^994[0-9]{9}$/'],
+            'phone' => ['nullable', 'string', 'regex:/^994[0-9]{9}$/'],
+            'email' => ['nullable', 'email', 'max:255'],
             'attributes' => ['nullable', 'array'],
         ]);
 
@@ -336,17 +383,42 @@ class CampaignContactController extends Controller
         }
 
         $phone = $request->input('phone');
+        $email = $request->input('email');
 
-        // Check if contact already exists
-        $existing = Contact::where('client_id', $client->id)
-            ->where('phone', $phone)
-            ->first();
-
-        if ($existing) {
+        // At least one of phone or email is required
+        if (empty($phone) && empty($email)) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Contact with this phone number already exists',
-            ], 409);
+                'message' => 'Validation failed',
+                'errors' => ['contact' => ['Phone or email is required']],
+            ], 422);
+        }
+
+        // Check if contact already exists by phone or email
+        if ($phone) {
+            $existing = Contact::where('client_id', $client->id)
+                ->where('phone', $phone)
+                ->first();
+
+            if ($existing) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Contact with this phone number already exists',
+                ], 409);
+            }
+        }
+
+        if ($email) {
+            $existing = Contact::where('client_id', $client->id)
+                ->where('email', $email)
+                ->first();
+
+            if ($existing) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Contact with this email address already exists',
+                ], 409);
+            }
         }
 
         // Sanitize date attributes
@@ -355,6 +427,7 @@ class CampaignContactController extends Controller
         $contact = Contact::create([
             'client_id' => $client->id,
             'phone' => $phone,
+            'email' => $email,
             'attributes' => $attributes,
         ]);
 
@@ -371,15 +444,19 @@ class CampaignContactController extends Controller
      * Update single contact
      *
      * @param Request $request
-     * @param string $phone
+     * @param string $identifier Phone or email to find the contact
      * @return JsonResponse
      */
-    public function update(Request $request, string $phone): JsonResponse
+    public function update(Request $request, string $identifier): JsonResponse
     {
         $client = $request->attributes->get('client');
 
+        // Find contact by phone or email
         $contact = Contact::where('client_id', $client->id)
-            ->where('phone', $phone)
+            ->where(function ($query) use ($identifier) {
+                $query->where('phone', $identifier)
+                    ->orWhere('email', $identifier);
+            })
             ->first();
 
         if (!$contact) {
@@ -391,6 +468,7 @@ class CampaignContactController extends Controller
 
         $validator = Validator::make($request->all(), [
             'phone' => ['nullable', 'string', 'regex:/^994[0-9]{9}$/'],
+            'email' => ['nullable', 'email', 'max:255'],
             'attributes' => ['nullable', 'array'],
         ]);
 
@@ -403,11 +481,13 @@ class CampaignContactController extends Controller
         }
 
         $newPhone = $request->input('phone');
+        $newEmail = $request->input('email');
 
         // If phone is being changed, check for duplicates
-        if ($newPhone && $newPhone !== $phone) {
+        if ($newPhone && $newPhone !== $contact->phone) {
             $existing = Contact::where('client_id', $client->id)
                 ->where('phone', $newPhone)
+                ->where('id', '!=', $contact->id)
                 ->first();
 
             if ($existing) {
@@ -418,6 +498,35 @@ class CampaignContactController extends Controller
             }
 
             $contact->phone = $newPhone;
+        }
+
+        // If email is being changed, check for duplicates
+        if ($newEmail && $newEmail !== $contact->email) {
+            $existing = Contact::where('client_id', $client->id)
+                ->where('email', $newEmail)
+                ->where('id', '!=', $contact->id)
+                ->first();
+
+            if ($existing) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Contact with this email address already exists',
+                ], 409);
+            }
+
+            $contact->email = $newEmail;
+        }
+
+        // Ensure at least one of phone or email remains
+        $finalPhone = $request->has('phone') ? $newPhone : $contact->phone;
+        $finalEmail = $request->has('email') ? $newEmail : $contact->email;
+
+        if (empty($finalPhone) && empty($finalEmail)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Validation failed',
+                'errors' => ['contact' => ['Phone or email is required']],
+            ], 422);
         }
 
         if ($request->has('attributes')) {
@@ -505,12 +614,12 @@ class CampaignContactController extends Controller
             fprintf($handle, chr(0xEF) . chr(0xBB) . chr(0xBF));
 
             // Header row
-            $headers = ['phone', ...$attributeKeys, 'created_at'];
+            $headers = ['phone', 'email', ...$attributeKeys, 'created_at'];
             fputcsv($handle, $headers);
 
             // Data rows
             foreach ($contacts as $contact) {
-                $row = [$contact->phone];
+                $row = [$contact->phone, $contact->email];
 
                 foreach ($attributeKeys as $key) {
                     $value = $contact->attributes[$key] ?? '';

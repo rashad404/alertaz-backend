@@ -12,8 +12,10 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('users', function (Blueprint $table) {
-            $table->unsignedBigInteger('wallet_id')->nullable()->after('id');
-            $table->index('wallet_id');
+            if (!Schema::hasColumn('users', 'wallet_id')) {
+                $table->unsignedBigInteger('wallet_id')->nullable()->after('id');
+                $table->index('wallet_id');
+            }
         });
     }
 

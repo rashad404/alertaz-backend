@@ -11,6 +11,7 @@ class Contact extends Model
     protected $fillable = [
         'client_id',
         'phone',
+        'email',
         'attributes',
     ];
 
@@ -40,5 +41,37 @@ class Contact extends Model
     {
         $attrs = $this->attributes;
         return is_array($attrs) ? ($attrs[$key] ?? null) : null;
+    }
+
+    /**
+     * Check if contact has a phone number
+     */
+    public function hasPhone(): bool
+    {
+        return !empty($this->phone);
+    }
+
+    /**
+     * Check if contact has an email address
+     */
+    public function hasEmail(): bool
+    {
+        return !empty($this->email);
+    }
+
+    /**
+     * Check if contact can receive SMS
+     */
+    public function canReceiveSms(): bool
+    {
+        return $this->hasPhone();
+    }
+
+    /**
+     * Check if contact can receive email
+     */
+    public function canReceiveEmail(): bool
+    {
+        return $this->hasEmail() && filter_var($this->email, FILTER_VALIDATE_EMAIL);
     }
 }

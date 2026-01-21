@@ -12,6 +12,11 @@ class Campaign extends Model
     const TYPE_ONE_TIME = 'one_time';
     const TYPE_AUTOMATED = 'automated';
 
+    // Channel types
+    const CHANNEL_SMS = 'sms';
+    const CHANNEL_EMAIL = 'email';
+    const CHANNEL_BOTH = 'both';
+
     // Statuses
     const STATUS_DRAFT = 'draft';
     const STATUS_SCHEDULED = 'scheduled';
@@ -27,6 +32,9 @@ class Campaign extends Model
         'name',
         'sender',
         'message_template',
+        'channel',
+        'email_subject_template',
+        'email_body_template',
         'status',
         'type',
         'check_interval_minutes',
@@ -45,7 +53,11 @@ class Campaign extends Model
         'sent_count',
         'delivered_count',
         'failed_count',
+        'email_sent_count',
+        'email_delivered_count',
+        'email_failed_count',
         'total_cost',
+        'email_total_cost',
         'created_by',
         'is_test',
         'balance_warning_20_sent',
@@ -64,6 +76,7 @@ class Campaign extends Model
         'next_run_at' => 'datetime',
         'is_test' => 'boolean',
         'total_cost' => 'decimal:2',
+        'email_total_cost' => 'decimal:2',
         'balance_warning_20_sent' => 'boolean',
         'balance_warning_10_sent' => 'boolean',
         'balance_warning_5_sent' => 'boolean',
@@ -324,30 +337,6 @@ class Campaign extends Model
     }
 
     /**
-     * Estimate total cost for the campaign
-     *
-     * @return array
-     */
-    public function estimateTotalCost(): array
-    {
-        $templateRenderer = app(\App\Services\TemplateRenderer::class);
-        $costPerSms = config('app.sms_cost_per_message', 0.04);
-
-        // Calculate segments based on template length (approximate - actual may vary with attribute values)
-        $segments = $templateRenderer->calculateSMSSegments($this->message_template);
-
-        // Total cost = target_count × segments × cost_per_sms
-        $totalCost = $this->target_count * $segments * $costPerSms;
-
-        return [
-            'target_count' => $this->target_count,
-            'segments_per_message' => $segments,
-            'cost_per_sms' => $costPerSms,
-            'estimated_total_cost' => round($totalCost, 2),
-        ];
-    }
-
-    /**
      * Get the user who owns this campaign (via client)
      *
      * @return \App\Models\User|null
@@ -355,5 +344,117 @@ class Campaign extends Model
     public function getOwnerUser(): ?\App\Models\User
     {
         return $this->client?->user;
+    }
+
+    /**
+     * Check if campaign requires phone numbers (SMS channel)
+     */
+    public function requiresPhone(): bool
+    {
+        $channel = $this->channel ?? self::CHANNEL_SMS;
+        return $channel === self::CHANNEL_SMS || $channel === self::CHANNEL_BOTH;
+    }
+
+    /**
+     * Check if campaign requires email addresses
+     */
+    public function requiresEmail(): bool
+    {
+        $channel = $this->channel ?? self::CHANNEL_SMS;
+        return $channel === self::CHANNEL_EMAIL || $channel === self::CHANNEL_BOTH;
+    }
+
+    /**
+     * Check if campaign is SMS-only
+     */
+    public function isSmsOnly(): bool
+    {
+        $channel = $this->channel ?? self::CHANNEL_SMS;
+        return $channel === self::CHANNEL_SMS;
+    }
+
+    /**
+     * Check if campaign is Email-only
+     */
+    public function isEmailOnly(): bool
+    {
+        return $this->channel === self::CHANNEL_EMAIL;
+    }
+
+    /**
+     * Check if campaign uses both channels
+     */
+    public function usesBothChannels(): bool
+    {
+        return $this->channel === self::CHANNEL_BOTH;
+    }
+
+    /**
+     * Get email messages relationship
+     */
+    public function emailMessages(): HasMany
+    {
+        return $this->hasMany(\App\Models\EmailMessage::class);
+    }
+
+    /**
+     * Increment email sent count
+     */
+    public function incrementEmailSentCount(): void
+    {
+        $this->increment('email_sent_count');
+    }
+
+    /**
+     * Increment email delivered count
+     */
+    public function incrementEmailDeliveredCount(): void
+    {
+        $this->increment('email_delivered_count');
+    }
+
+    /**
+     * Increment email failed count
+     */
+    public function incrementEmailFailedCount(): void
+    {
+        $this->increment('email_failed_count');
+    }
+
+    /**
+     * Estimate total cost for the campaign (including both channels)
+     *
+     * @return array
+     */
+    public function estimateTotalCost(): array
+    {
+        $templateRenderer = app(\App\Services\TemplateRenderer::class);
+        $costPerSms = config('app.sms_cost_per_message', 0.04);
+        $costPerEmail = config('app.email_cost_per_message', 0.01);
+
+        $result = [
+            'target_count' => $this->target_count,
+            'cost_per_sms' => $costPerSms,
+            'cost_per_email' => $costPerEmail,
+            'estimated_sms_cost' => 0,
+            'estimated_email_cost' => 0,
+            'estimated_total_cost' => 0,
+        ];
+
+        // Calculate SMS cost
+        if ($this->requiresPhone()) {
+            $segments = $templateRenderer->calculateSMSSegments($this->message_template ?? '');
+            $result['segments_per_message'] = $segments;
+            $result['estimated_sms_cost'] = round($this->target_count * $segments * $costPerSms, 2);
+        }
+
+        // Calculate Email cost
+        if ($this->requiresEmail()) {
+            $result['estimated_email_cost'] = round($this->target_count * $costPerEmail, 2);
+        }
+
+        $result['estimated_total_cost'] = $result['estimated_sms_cost'] + $result['estimated_email_cost'];
+
+        return $result;
     }
 }
