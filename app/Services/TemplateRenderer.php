@@ -64,6 +64,26 @@ class TemplateRenderer
     }
 
     /**
+     * Render template with fallback - unresolved variables become their names
+     * Use this for test sends where the sample contact may not have all attributes
+     *
+     * @param string $template
+     * @param Contact $contact
+     * @return string
+     */
+    public function renderWithFallback(string $template, Contact $contact): string
+    {
+        $message = $this->render($template, $contact);
+
+        // Replace remaining {{variable}} with just the variable name
+        $message = preg_replace_callback('/\{\{([a-zA-Z0-9_]+)\}\}/', function ($matches) {
+            return $matches[1]; // Return just the variable name without braces
+        }, $message);
+
+        return $message;
+    }
+
+    /**
      * Validate template (check for undefined variables)
      *
      * @param string $template

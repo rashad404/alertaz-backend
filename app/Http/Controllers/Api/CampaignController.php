@@ -1350,18 +1350,24 @@ class CampaignController extends Controller
                 ->where('id', $sampleContactId)
                 ->first();
         } else {
-            // Use first matching contact
+            // Use first matching contact from segment
             $sampleContact = $this->queryBuilder->getMatches(
                 $client->id,
                 $campaign->segment_filter,
                 1
             )->first();
+
+            // If no matching contact, try any contact from the client
+            if (!$sampleContact) {
+                $sampleContact = \App\Models\Contact::where('client_id', $client->id)
+                    ->first();
+            }
         }
 
         if (!$sampleContact) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'No sample contact found for template rendering',
+                'message' => 'No contacts found. Please add contacts to the project first.',
             ], 422);
         }
 
@@ -1414,17 +1420,8 @@ class CampaignController extends Controller
         $costPerSms = config('app.sms_cost_per_message', 0.04);
         $globalTestMode = config('services.quicksms.test_mode', false);
 
-        // Render message
-        try {
-            $message = $templateRenderer->renderStrict($campaign->message_template ?? '', $sampleContact);
-        } catch (\App\Exceptions\TemplateRenderException $e) {
-            return [
-                'phone' => $phone,
-                'status' => 'failed',
-                'error' => 'Template rendering failed: ' . implode(', ', $e->getUnresolvedVariables()),
-            ];
-        }
-
+        // Render message with fallback for missing variables (for test sends)
+        $message = $templateRenderer->renderWithFallback($campaign->message_template ?? '', $sampleContact);
         $message = $templateRenderer->sanitizeForSMS($message);
         $segments = $templateRenderer->calculateSMSSegments($message);
         $cost = $segments * $costPerSms;
@@ -1500,16 +1497,9 @@ class CampaignController extends Controller
         $globalTestMode = config('services.quicksms.test_mode', false);
 
         // Render subject and body
-        try {
-            $subject = $templateRenderer->renderStrict($campaign->email_subject_template ?? '', $sampleContact);
-            $body = $templateRenderer->renderStrict($campaign->email_body_template ?? '', $sampleContact);
-        } catch (\App\Exceptions\TemplateRenderException $e) {
-            return [
-                'email' => $email,
-                'status' => 'failed',
-                'error' => 'Template rendering failed: ' . implode(', ', $e->getUnresolvedVariables()),
-            ];
-        }
+        // Render templates with fallback for missing variables (for test sends)
+        $subject = $templateRenderer->renderWithFallback($campaign->email_subject_template ?? '', $sampleContact);
+        $body = $templateRenderer->renderWithFallback($campaign->email_body_template ?? '', $sampleContact);
 
         $cost = $costPerEmail;
 
