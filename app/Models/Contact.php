@@ -88,4 +88,32 @@ class Contact extends Model
 
         return null;
     }
+
+    /**
+     * Create a temporary sample contact instance (not saved to DB)
+     * Used for test sends when custom email/phone is not in contact list
+     *
+     * @param int $clientId
+     * @param string|null $phone - Override phone
+     * @param string|null $email - Override email
+     * @return self
+     */
+    public static function createSampleInstance(int $clientId, ?string $phone = null, ?string $email = null): self
+    {
+        $contact = new self([
+            'client_id' => $clientId,
+            'phone' => $phone ?? '994501234567',
+            'attributes' => [
+                'name' => 'John Doe',
+                'email' => $email ?? 'sample@example.com',
+                'phone' => $phone ?? '994501234567',
+                'dob' => '01.01.1990',
+                'company' => 'Sample Company',
+                'address' => 'Sample Address',
+            ],
+        ]);
+        $contact->id = 0; // Dummy ID for temporary contact
+
+        return $contact;
+    }
 }

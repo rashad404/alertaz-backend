@@ -1345,29 +1345,44 @@ class CampaignController extends Controller
         }
 
         // Get sample contact for attributes
+        $sampleContact = null;
+
         if ($sampleContactId) {
+            // User specified a sample contact to use for template rendering
             $sampleContact = \App\Models\Contact::where('client_id', $client->id)
                 ->where('id', $sampleContactId)
                 ->first();
         } else {
-            // Use first matching contact from segment
-            $sampleContact = $this->queryBuilder->getMatches(
-                $client->id,
-                $campaign->segment_filter,
-                1
-            )->first();
-
-            // If no matching contact, try any contact from the client
-            if (!$sampleContact) {
+            // Try to find contact by the custom email/phone provided
+            if ($email) {
                 $sampleContact = \App\Models\Contact::where('client_id', $client->id)
+                    ->where(function ($q) use ($email) {
+                        $q->where('email', $email)
+                            ->orWhereRaw("JSON_UNQUOTE(JSON_EXTRACT(attributes, '$.email')) = ?", [$email]);
+                    })
                     ->first();
+            }
+
+            if (!$sampleContact && $phone) {
+                $sampleContact = \App\Models\Contact::where('client_id', $client->id)
+                    ->where('phone', $phone)
+                    ->first();
+            }
+
+            // If custom email/phone not found in contacts, create temporary sample contact
+            if (!$sampleContact) {
+                $sampleContact = \App\Models\Contact::createSampleInstance(
+                    $client->id,
+                    $phone,
+                    $email
+                );
             }
         }
 
         if (!$sampleContact) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'No contacts found. Please add contacts to the project first.',
+                'message' => 'Sample contact not found.',
             ], 422);
         }
 
@@ -1406,7 +1421,7 @@ class CampaignController extends Controller
             'data' => [
                 'sms' => $results['sms'],
                 'email' => $results['email'],
-                'sample_contact_id' => $sampleContact->id,
+                'sample_contact_id' => $sampleContact->id ?: null,
             ],
         ], $anySuccess ? 200 : 500);
     }
@@ -1524,7 +1539,7 @@ class CampaignController extends Controller
                 'source' => 'campaign',
                 'client_id' => $campaign->client_id,
                 'campaign_id' => $campaign->id,
-                'contact_id' => $sampleContact->id,
+                'contact_id' => $sampleContact->id ?: null,
                 'to_email' => $email,
                 'subject' => $subject,
                 'body_html' => $body,
@@ -1549,7 +1564,7 @@ class CampaignController extends Controller
                     'campaign',
                     $campaign->client_id,
                     $campaign->id, // campaignId
-                    $sampleContact->id // contactId
+                    $sampleContact->id ?: null // contactId (null if temporary contact)
                 );
 
                 if ($result['success']) {
