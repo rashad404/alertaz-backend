@@ -28,7 +28,7 @@ class CampaignExecutionEngine
     /**
      * Get email service (lazy loaded)
      */
-    protected function getEmailService(): EmailService
+    public function getEmailService(): EmailService
     {
         if ($this->emailService === null) {
             $this->emailService = app(EmailService::class);
