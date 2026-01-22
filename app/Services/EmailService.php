@@ -38,6 +38,8 @@ class EmailService
      * @param string|null $fromName - From name (optional, uses default)
      * @param string $source - 'api', 'verification', 'notification', 'campaign'
      * @param int|null $clientId - Optional client ID for API sources
+     * @param int|null $campaignId - Optional campaign ID for campaign sources
+     * @param int|null $contactId - Optional contact ID for campaign sources
      * @return array
      */
     public function send(
@@ -50,7 +52,9 @@ class EmailService
         ?string $fromEmail = null,
         ?string $fromName = null,
         string $source = 'api',
-        ?int $clientId = null
+        ?int $clientId = null,
+        ?int $campaignId = null,
+        ?int $contactId = null
     ): array {
         $cost = $this->costPerEmail;
         $isTest = $this->isTestMode();
@@ -80,7 +84,9 @@ class EmailService
                 source: $source,
                 cost: 0, // No cost in test mode
                 isTest: true,
-                clientId: $clientId
+                clientId: $clientId,
+                campaignId: $campaignId,
+                contactId: $contactId
             );
 
             $emailMessage->markAsSent('test-' . uniqid());
@@ -130,7 +136,9 @@ class EmailService
             source: $source,
             cost: $cost,
             isTest: false,
-            clientId: $clientId
+            clientId: $clientId,
+            campaignId: $campaignId,
+            contactId: $contactId
         );
 
         try {
@@ -274,11 +282,15 @@ class EmailService
         string $source,
         float $cost,
         bool $isTest,
-        ?int $clientId = null
+        ?int $clientId = null,
+        ?int $campaignId = null,
+        ?int $contactId = null
     ): EmailMessage {
         return EmailMessage::create([
             'user_id' => $user->id,
             'client_id' => $clientId,
+            'campaign_id' => $campaignId,
+            'contact_id' => $contactId,
             'to_email' => $toEmail,
             'to_name' => $toName,
             'from_email' => $fromEmail,

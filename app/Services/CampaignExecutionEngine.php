@@ -362,48 +362,53 @@ class CampaignExecutionEngine
                 $messageStatus = 'sent';
                 $deliveryStatus = 'delivered';
                 $delivered = true;
-            } else {
-                // Real mode: send email
-                $emailService = $this->getEmailService();
-                $result = $emailService->send([
-                    'to' => $email,
+
+                // Create email message record for mock mode
+                EmailMessage::create([
+                    'user_id' => $campaign->created_by,
+                    'source' => 'campaign',
+                    'client_id' => $campaign->client_id,
+                    'campaign_id' => $campaign->id,
+                    'contact_id' => $contact->id,
+                    'to_email' => $email,
                     'subject' => $subject,
                     'body_html' => $body,
                     'from_name' => $campaign->sender,
+                    'cost' => 0,
+                    'status' => 'sent',
+                    'is_test' => true,
+                    'sent_at' => now(),
+                    'delivered_at' => now(),
                 ]);
+            } else {
+                // Real mode: send email via EmailService (handles logging and billing)
+                $emailService = $this->getEmailService();
+                $result = $emailService->send(
+                    $user,
+                    $email,
+                    $subject,
+                    $body,
+                    null, // bodyText
+                    null, // toName
+                    null, // fromEmail
+                    $campaign->sender, // fromName
+                    'campaign',
+                    $campaign->client_id,
+                    $campaign->id, // campaignId
+                    $contact->id // contactId
+                );
 
                 if ($result['success']) {
                     $messageStatus = 'sent';
                     $externalId = $result['message_id'] ?? null;
                     $deliveryStatus = 'pending';
-
-                    // Deduct cost from user balance
-                    $user->deductBalance($cost);
+                    // Balance already deducted by EmailService
                 } else {
                     $messageStatus = 'failed';
                     $deliveryStatus = 'failed';
                     $cost = 0;
                 }
             }
-
-            // Create email message record
-            EmailMessage::create([
-                'user_id' => $campaign->created_by,
-                'source' => 'campaign',
-                'client_id' => $campaign->client_id,
-                'campaign_id' => $campaign->id,
-                'contact_id' => $contact->id,
-                'to_email' => $email,
-                'subject' => $subject,
-                'body_html' => $body,
-                'from_name' => $campaign->sender,
-                'cost' => $cost,
-                'status' => $messageStatus,
-                'is_test' => $mockMode,
-                'provider_message_id' => $externalId,
-                'sent_at' => $messageStatus === 'sent' ? now() : null,
-                'delivered_at' => $deliveryStatus === 'delivered' ? now() : null,
-            ]);
 
             return [
                 'success' => $messageStatus === 'sent',

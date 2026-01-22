@@ -1518,34 +1518,7 @@ class CampaignController extends Controller
         if ($globalTestMode) {
             $status = 'sent';
             $error = null;
-            // Don't deduct balance in test mode
-        } else {
-            try {
-                $emailService = $this->executionEngine->getEmailService();
-                $result = $emailService->send([
-                    'to' => $email,
-                    'subject' => $subject,
-                    'body_html' => $body,
-                    'from_name' => $campaign->sender,
-                ]);
-
-                if ($result['success']) {
-                    $status = 'sent';
-                    $error = null;
-                    $providerMessageId = $result['message_id'] ?? null;
-                    $user->deductBalance($cost);
-                } else {
-                    $status = 'failed';
-                    $error = $result['error'] ?? 'Unknown error';
-                }
-            } catch (\Exception $e) {
-                $status = 'failed';
-                $error = $e->getMessage();
-            }
-        }
-
-        // Log the test email message (both in test mode and real mode)
-        if ($status === 'sent') {
+            // Don't deduct balance in test mode - log manually
             \App\Models\EmailMessage::create([
                 'user_id' => $campaign->created_by,
                 'source' => 'campaign',
@@ -1556,12 +1529,42 @@ class CampaignController extends Controller
                 'subject' => $subject,
                 'body_html' => $body,
                 'from_name' => $campaign->sender,
-                'cost' => $globalTestMode ? 0 : $cost,
+                'cost' => 0,
                 'status' => 'sent',
                 'is_test' => true,
-                'provider_message_id' => $providerMessageId,
                 'sent_at' => now(),
             ]);
+        } else {
+            try {
+                $emailService = $this->executionEngine->getEmailService();
+                $result = $emailService->send(
+                    $user,
+                    $email,
+                    $subject,
+                    $body,
+                    null, // bodyText
+                    null, // toName
+                    null, // fromEmail
+                    $campaign->sender, // fromName
+                    'campaign',
+                    $campaign->client_id,
+                    $campaign->id, // campaignId
+                    $sampleContact->id // contactId
+                );
+
+                if ($result['success']) {
+                    $status = 'sent';
+                    $error = null;
+                    $providerMessageId = $result['message_id'] ?? null;
+                    // Balance already deducted by EmailService
+                } else {
+                    $status = 'failed';
+                    $error = $result['error'] ?? 'Unknown error';
+                }
+            } catch (\Exception $e) {
+                $status = 'failed';
+                $error = $e->getMessage();
+            }
         }
 
         return [
