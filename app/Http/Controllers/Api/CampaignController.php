@@ -1353,13 +1353,10 @@ class CampaignController extends Controller
                 ->where('id', $sampleContactId)
                 ->first();
         } else {
-            // Try to find contact by the custom email/phone provided
+            // Try to find contact by the custom email/phone provided (email is stored in attributes JSON)
             if ($email) {
                 $sampleContact = \App\Models\Contact::where('client_id', $client->id)
-                    ->where(function ($q) use ($email) {
-                        $q->where('email', $email)
-                            ->orWhereRaw("JSON_UNQUOTE(JSON_EXTRACT(attributes, '$.email')) = ?", [$email]);
-                    })
+                    ->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(attributes, '$.email')) = ?", [$email])
                     ->first();
             }
 
