@@ -114,6 +114,12 @@ class SegmentController extends Controller
                 'data' => $responseData,
             ], 200);
         } catch (\Exception $e) {
+            \Log::error('Segment preview error', [
+                'client_id' => $client->id,
+                'filter' => $filter,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to preview segment',

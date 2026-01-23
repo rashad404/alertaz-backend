@@ -521,6 +521,9 @@ class SegmentQueryBuilder
     {
         if (is_array($value) && isset($value['days'])) {
             $days = (int) $value['days'];
+        } elseif (is_array($value) && isset($value['count'])) {
+            // Fallback: accept count format from count operator (frontend bug workaround)
+            $days = (int) $value['count'];
         } elseif (is_numeric($value)) {
             $days = (int) $value;
         } else {
