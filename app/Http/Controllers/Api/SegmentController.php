@@ -90,20 +90,28 @@ class SegmentController extends Controller
                 ? $this->queryBuilder->getMatches($client->id, $filter, $previewLimit)
                 : collect();
 
+            $responseData = [
+                'total_count' => $totalCount,
+                'preview_count' => $sampleContacts->count(),
+                'preview_contacts' => $sampleContacts->map(function ($contact) {
+                    return [
+                        'id' => $contact->id,
+                        'phone' => $contact->phone,
+                        'attributes' => $contact->attributes,
+                        'created_at' => $contact->created_at->toIso8601String(),
+                    ];
+                }),
+            ];
+
+            // Add debug SQL for client_id 1 only
+            if ($client->id === 1) {
+                $responseData['debug_sql'] = $this->queryBuilder->getDebugSql($client->id, $filter);
+                $responseData['debug_filter'] = $filter;
+            }
+
             return response()->json([
                 'status' => 'success',
-                'data' => [
-                    'total_count' => $totalCount,
-                    'preview_count' => $sampleContacts->count(),
-                    'preview_contacts' => $sampleContacts->map(function ($contact) {
-                        return [
-                            'id' => $contact->id,
-                            'phone' => $contact->phone,
-                            'attributes' => $contact->attributes,
-                            'created_at' => $contact->created_at->toIso8601String(),
-                        ];
-                    }),
-                ],
+                'data' => $responseData,
             ], 200);
         } catch (\Exception $e) {
             return response()->json([

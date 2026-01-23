@@ -700,4 +700,28 @@ class SegmentQueryBuilder
         $this->applyFilters($query, $filter);
         return $query;
     }
+
+    /**
+     * Get the SQL query string with bindings for debugging
+     *
+     * @param int $clientId
+     * @param array $filter
+     * @return string
+     */
+    public function getDebugSql(int $clientId, array $filter): string
+    {
+        $query = \App\Models\Contact::where('client_id', $clientId);
+        $this->applyFilters($query, $filter);
+
+        $sql = $query->toSql();
+        $bindings = $query->getBindings();
+
+        // Replace placeholders with actual values
+        foreach ($bindings as $binding) {
+            $value = is_numeric($binding) ? $binding : "'{$binding}'";
+            $sql = preg_replace('/\?/', $value, $sql, 1);
+        }
+
+        return $sql;
+    }
 }
