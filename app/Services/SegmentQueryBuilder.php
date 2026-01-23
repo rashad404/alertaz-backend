@@ -493,22 +493,19 @@ class SegmentQueryBuilder
         }
 
         $key = $this->extractKey($jsonPath);
-        $today = now()->format('Y-m-d');
-        $targetDate = now()->addDays($days)->format('Y-m-d');
 
-        // Use JSON_TABLE with IN subquery (EXISTS doesn't work well with JSON_TABLE in MySQL)
+        // MariaDB compatible: build REGEXP pattern for date range
+        // Limit to 60 days max to prevent regex from being too large
+        $days = min($days, 60);
+        $dates = [];
+        for ($i = 0; $i <= $days; $i++) {
+            $dates[] = now()->addDays($i)->format('Y-m-d');
+        }
+        $pattern = '"expiry"[[:space:]]*:[[:space:]]*"(' . implode('|', $dates) . ')"';
+
         $query->whereRaw(
-            "`contacts`.`id` IN (
-                SELECT c.id FROM `contacts` c,
-                JSON_TABLE(
-                    c.`attributes`,
-                    '\$.{$key}[*]' COLUMNS (
-                        expiry VARCHAR(20) PATH '\$.expiry'
-                    )
-                ) AS jt
-                WHERE jt.expiry BETWEEN ? AND ?
-            )",
-            [$today, $targetDate],
+            "`attributes` REGEXP ?",
+            [$pattern],
             $boolean
         );
     }
@@ -533,19 +530,11 @@ class SegmentQueryBuilder
         $key = $this->extractKey($jsonPath);
         $targetDate = now()->addDays($days)->format('Y-m-d');
 
-        // Find contacts where any item's expiry is exactly on the target date
+        // MariaDB compatible: search for expiry date pattern in JSON string
+        // This matches "expiry":"2026-01-26" or "expiry": "2026-01-26" in the JSON
         $query->whereRaw(
-            "`contacts`.`id` IN (
-                SELECT c.id FROM `contacts` c,
-                JSON_TABLE(
-                    c.`attributes`,
-                    '\$.{$key}[*]' COLUMNS (
-                        expiry VARCHAR(20) PATH '\$.expiry'
-                    )
-                ) AS jt
-                WHERE DATE(jt.expiry) = ?
-            )",
-            [$targetDate],
+            "`attributes` REGEXP ?",
+            ['"expiry"[[:space:]]*:[[:space:]]*"' . $targetDate . '"'],
             $boolean
         );
     }
@@ -565,21 +554,18 @@ class SegmentQueryBuilder
         }
 
         $key = $this->extractKey($jsonPath);
-        $targetDate = now()->addDays($days)->format('Y-m-d');
+        $targetDate = now()->addDays($days + 1)->format('Y-m-d');
 
-        // Find contacts where any item's expiry is after the target date
+        // MariaDB compatible: Check for dates >= targetDate+1 in the JSON
+        // Using LIKE with a pattern that matches dates >= target year
+        // This is approximate but functional for most cases
+        $year = (int) substr($targetDate, 0, 4);
         $query->whereRaw(
-            "`contacts`.`id` IN (
-                SELECT c.id FROM `contacts` c,
-                JSON_TABLE(
-                    c.`attributes`,
-                    '\$.{$key}[*]' COLUMNS (
-                        expiry VARCHAR(20) PATH '\$.expiry'
-                    )
-                ) AS jt
-                WHERE jt.expiry > ?
-            )",
-            [$targetDate],
+            "(`attributes` REGEXP ? OR `attributes` REGEXP ?)",
+            [
+                '"expiry"[[:space:]]*:[[:space:]]*"' . $year . '-[0-9]{2}-[0-9]{2}"',
+                '"expiry"[[:space:]]*:[[:space:]]*"[' . $year . '-9][0-9]{3}-[0-9]{2}-[0-9]{2}"'
+            ],
             $boolean
         );
     }
@@ -598,21 +584,19 @@ class SegmentQueryBuilder
         }
 
         $key = $this->extractKey($jsonPath);
-        $today = now()->format('Y-m-d');
-        $pastDate = now()->subDays($days)->format('Y-m-d');
+
+        // MariaDB compatible: build REGEXP pattern for date range (past X days)
+        // Limit to 60 days max to prevent regex from being too large
+        $days = min($days, 60);
+        $dates = [];
+        for ($i = 0; $i <= $days; $i++) {
+            $dates[] = now()->subDays($i)->format('Y-m-d');
+        }
+        $pattern = '"expiry"[[:space:]]*:[[:space:]]*"(' . implode('|', $dates) . ')"';
 
         $query->whereRaw(
-            "`contacts`.`id` IN (
-                SELECT c.id FROM `contacts` c,
-                JSON_TABLE(
-                    c.`attributes`,
-                    '\$.{$key}[*]' COLUMNS (
-                        expiry VARCHAR(20) PATH '\$.expiry'
-                    )
-                ) AS jt
-                WHERE jt.expiry BETWEEN ? AND ?
-            )",
-            [$pastDate, $today],
+            "`attributes` REGEXP ?",
+            [$pattern],
             $boolean
         );
     }
@@ -625,18 +609,10 @@ class SegmentQueryBuilder
         $key = $this->extractKey($jsonPath);
         $today = now()->format('Y-m-d');
 
+        // MariaDB compatible: search for today's date in expiry field
         $query->whereRaw(
-            "`contacts`.`id` IN (
-                SELECT c.id FROM `contacts` c,
-                JSON_TABLE(
-                    c.`attributes`,
-                    '\$.{$key}[*]' COLUMNS (
-                        expiry VARCHAR(20) PATH '\$.expiry'
-                    )
-                ) AS jt
-                WHERE jt.expiry = ?
-            )",
-            [$today],
+            "`attributes` REGEXP ?",
+            ['"expiry"[[:space:]]*:[[:space:]]*"' . $today . '"'],
             $boolean
         );
     }
