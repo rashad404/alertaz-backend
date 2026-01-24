@@ -41,6 +41,7 @@ class SegmentController extends Controller
                     'conditions' => $schema->getConditionsForType(),
                     'options' => $schema->options,
                     'item_type' => $schema->item_type,
+                    'properties' => $schema->properties,
                     'required' => $schema->required,
                 ];
             });
@@ -208,6 +209,7 @@ class SegmentController extends Controller
             'message_template' => ['nullable', 'string'],
             'email_subject_template' => ['nullable', 'string'],
             'email_body_template' => ['nullable', 'string'],
+            'email_display_name' => ['nullable', 'string', 'max:100'],
             'page' => ['nullable', 'integer', 'min:1'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:50'],
         ]);
@@ -225,6 +227,7 @@ class SegmentController extends Controller
         $messageTemplate = $request->input('message_template', '');
         $emailSubjectTemplate = $request->input('email_subject_template', '');
         $emailBodyTemplate = $request->input('email_body_template', '');
+        $emailDisplayName = $request->input('email_display_name', 'Alert.az');
         $page = $request->input('page', 1);
         $perPage = $request->input('per_page', 10);
 
@@ -264,7 +267,7 @@ class SegmentController extends Controller
             }
 
             // Render messages for each contact
-            $plannedContacts = $contacts->map(function ($contact) use ($filter, $channel, $messageTemplate, $emailSubjectTemplate, $emailBodyTemplate) {
+            $plannedContacts = $contacts->map(function ($contact) use ($filter, $channel, $messageTemplate, $emailSubjectTemplate, $emailBodyTemplate, $emailDisplayName) {
                 $contactData = [
                     'contact_id' => $contact->id,
                     'phone' => $contact->phone,
@@ -274,6 +277,7 @@ class SegmentController extends Controller
                     'message' => null,
                     'email_subject' => null,
                     'email_body' => null,
+                    'email_body_html' => null,
                     'segments' => 0,
                     'attributes' => $contact->attributes,
                 ];
@@ -287,10 +291,14 @@ class SegmentController extends Controller
 
                 // Render email if needed
                 if (($channel === 'email' || $channel === 'both') && $emailBodyTemplate) {
-                    $contactData['email_subject'] = $emailSubjectTemplate
+                    $subject = $emailSubjectTemplate
                         ? $this->templateRenderer->render($emailSubjectTemplate, $contact, $filter)
-                        : null;
-                    $contactData['email_body'] = $this->templateRenderer->render($emailBodyTemplate, $contact, $filter);
+                        : '';
+                    $bodyText = $this->templateRenderer->render($emailBodyTemplate, $contact, $filter);
+
+                    $contactData['email_subject'] = $subject ?: null;
+                    $contactData['email_body'] = $bodyText;
+                    $contactData['email_body_html'] = $this->convertToHtmlEmail($bodyText, $subject, $emailDisplayName);
                 }
 
                 return $contactData;
@@ -321,5 +329,58 @@ class SegmentController extends Controller
                 'error' => $e->getMessage(),
             ], 500);
         }
+    }
+
+    /**
+     * Convert plain text email body to HTML with styled template
+     * Mirrors CampaignExecutionEngine::convertToHtmlEmail for preview consistency
+     *
+     * @param string $body
+     * @param string $subject
+     * @param string|null $senderName
+     * @return string
+     */
+    protected function convertToHtmlEmail(string $body, string $subject, ?string $senderName = null): string
+    {
+        // Convert newlines to <br> and escape HTML entities
+        $htmlBody = nl2br(htmlspecialchars($body, ENT_QUOTES, 'UTF-8'));
+
+        $senderDisplay = $senderName ?? 'Alert.az';
+        $year = date('Y');
+
+        return <<<HTML
+<!DOCTYPE html>
+<html lang="az">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 0; font-family: Arial, Helvetica, sans-serif; background-color: #f3f4f6;">
+    <table width="100%" cellspacing="0" cellpadding="0" style="background-color: #f3f4f6;">
+        <tr>
+            <td align="center" style="padding: 40px 20px;">
+                <table width="600" cellspacing="0" cellpadding="0" style="max-width: 600px; width: 100%;">
+                    <tr>
+                        <td style="background-color: #515BC3; padding: 30px; text-align: center; border-radius: 12px 12px 0 0;">
+                            <h1 style="margin: 0; color: #ffffff; font-size: 24px;">{$senderDisplay}</h1>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="background-color: #ffffff; padding: 30px;">
+                            <div style="color: #4B5563; font-size: 15px; line-height: 1.6;">{$htmlBody}</div>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="background-color: #F9FAFB; padding: 20px 30px; border-radius: 0 0 12px 12px; text-align: center;">
+                            <p style="margin: 0; font-size: 12px; color: #9CA3AF;">&copy; {$year} {$senderDisplay}</p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
+HTML;
     }
 }
