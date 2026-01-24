@@ -793,19 +793,32 @@ HTML;
 
             // Render email if channel is email or both
             if ($campaign->requiresEmail()) {
+                $subject = '';
+                $bodyText = '';
+
                 if ($campaign->email_subject_template) {
-                    $contactData['email_subject'] = $this->templateRenderer->render(
+                    $subject = $this->templateRenderer->render(
                         $campaign->email_subject_template,
                         $contact,
                         $segmentFilter
                     );
+                    $contactData['email_subject'] = $subject;
                 }
                 if ($campaign->email_body_template) {
-                    $contactData['email_body'] = $this->templateRenderer->render(
+                    $bodyText = $this->templateRenderer->render(
                         $campaign->email_body_template,
                         $contact,
                         $segmentFilter
                     );
+                    $contactData['email_body'] = $bodyText;
+
+                    // Generate HTML preview with header
+                    $emailSenderDetails = \App\Models\UserEmailSender::getByEmail($campaign->email_sender ?? '');
+                    if (!$emailSenderDetails) {
+                        $emailSenderDetails = \App\Models\UserEmailSender::getDefault();
+                    }
+                    $displayName = $campaign->email_display_name ?? $emailSenderDetails['name'] ?? 'Alert.az';
+                    $contactData['email_body_html'] = $this->convertToHtmlEmail($bodyText, $subject, $displayName);
                 }
             }
 
