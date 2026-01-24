@@ -232,6 +232,10 @@ class SegmentController extends Controller
             // Get query for matching contacts
             $query = $this->queryBuilder->getMatchesQuery($client->id, $filter);
 
+            // Initialize channel-specific totals
+            $smsTotal = 0;
+            $emailTotal = 0;
+
             // For "both" channel, include contacts with valid phone OR valid email
             if ($channel === 'both') {
                 $allContacts = $query->get();
@@ -239,6 +243,9 @@ class SegmentController extends Controller
                     return $contact->canReceiveSms() || $contact->canReceiveEmail();
                 });
                 $totalCount = $filteredContacts->count();
+                // Calculate channel-specific totals from ALL filtered contacts
+                $smsTotal = $filteredContacts->filter(fn($c) => $c->canReceiveSms())->count();
+                $emailTotal = $filteredContacts->filter(fn($c) => $c->canReceiveEmail())->count();
                 // Paginate manually
                 $contacts = $filteredContacts->slice(($page - 1) * $perPage, $perPage)->values();
             } elseif ($channel === 'email') {
@@ -247,10 +254,12 @@ class SegmentController extends Controller
                     return $contact->canReceiveEmail();
                 });
                 $totalCount = $filteredContacts->count();
+                $emailTotal = $totalCount;
                 $contacts = $filteredContacts->slice(($page - 1) * $perPage, $perPage)->values();
             } else {
                 // SMS only - no additional filtering needed
                 $totalCount = $query->count();
+                $smsTotal = $totalCount;
                 $contacts = $query->skip(($page - 1) * $perPage)->take($perPage)->get();
             }
 
@@ -292,6 +301,8 @@ class SegmentController extends Controller
                 'data' => [
                     'contacts' => $plannedContacts,
                     'total' => $totalCount,
+                    'sms_total' => $smsTotal,
+                    'email_total' => $emailTotal,
                     'page' => $page,
                     'per_page' => $perPage,
                     'total_pages' => ceil($totalCount / $perPage),

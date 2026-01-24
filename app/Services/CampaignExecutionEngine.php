@@ -660,6 +660,10 @@ class CampaignExecutionEngine
             $query->whereNotIn('id', $cooldownContactIds);
         }
 
+        // Initialize channel-specific totals
+        $smsTotal = 0;
+        $emailTotal = 0;
+
         // For "both" channel: include contacts with valid phone OR valid email
         // For email-only: filter by valid email
         // For sms-only: no email filtering needed
@@ -669,6 +673,9 @@ class CampaignExecutionEngine
                 return $contact->canReceiveSms() || $contact->canReceiveEmail();
             });
             $totalPlanned = $filteredContacts->count();
+            // Calculate channel-specific totals from ALL filtered contacts
+            $smsTotal = $filteredContacts->filter(fn($c) => $c->canReceiveSms())->count();
+            $emailTotal = $filteredContacts->filter(fn($c) => $c->canReceiveEmail())->count();
             $offset = ($page - 1) * $perPage;
             $contacts = $filteredContacts->slice($offset, $perPage)->values();
         } elseif ($campaign->requiresEmail()) {
@@ -678,11 +685,13 @@ class CampaignExecutionEngine
                 return EmailValidator::isValid($email);
             });
             $totalPlanned = $filteredContacts->count();
+            $emailTotal = $totalPlanned;
             $offset = ($page - 1) * $perPage;
             $contacts = $filteredContacts->slice($offset, $perPage)->values();
         } else {
             // Get total count before pagination
             $totalPlanned = $query->count();
+            $smsTotal = $totalPlanned;
             // Paginate
             $offset = ($page - 1) * $perPage;
             $contacts = $query->skip($offset)->take($perPage)->get();
@@ -747,6 +756,8 @@ class CampaignExecutionEngine
                 'last_page' => (int) ceil($totalPlanned / $perPage),
                 'per_page' => $perPage,
                 'total' => $totalPlanned,
+                'sms_total' => $smsTotal,
+                'email_total' => $emailTotal,
             ],
             'next_run_at' => $campaign->next_run_at?->toIso8601String(),
         ];
@@ -784,6 +795,10 @@ class CampaignExecutionEngine
             $query->whereNotIn('id', $cooldownContactIds);
         }
 
+        // Initialize channel-specific totals
+        $smsTotal = 0;
+        $emailTotal = 0;
+
         // For "both" channel: include contacts with valid phone OR valid email
         // For email-only: filter by valid email
         // For sms-only: no email filtering needed
@@ -793,6 +808,9 @@ class CampaignExecutionEngine
                 return $contact->canReceiveSms() || $contact->canReceiveEmail();
             });
             $totalCount = $filteredContacts->count();
+            // Calculate channel-specific totals from ALL filtered contacts
+            $smsTotal = $filteredContacts->filter(fn($c) => $c->canReceiveSms())->count();
+            $emailTotal = $filteredContacts->filter(fn($c) => $c->canReceiveEmail())->count();
             $contacts = $filteredContacts->take($limit)->values();
         } elseif ($campaign->requiresEmail()) {
             $allContacts = $query->get();
@@ -801,10 +819,12 @@ class CampaignExecutionEngine
                 return EmailValidator::isValid($email);
             });
             $totalCount = $filteredContacts->count();
+            $emailTotal = $totalCount;
             $contacts = $filteredContacts->take($limit)->values();
         } else {
             // Get total planned count (matching - cooldown)
             $totalCount = $query->count();
+            $smsTotal = $totalCount;
             // Get sample contacts for preview
             $contacts = $query->limit($limit)->get();
         }
@@ -861,6 +881,8 @@ class CampaignExecutionEngine
 
         return [
             'total_count' => $totalCount,
+            'sms_total' => $smsTotal,
+            'email_total' => $emailTotal,
             'previews' => $previews,
             'channel' => $campaign->channel ?? 'sms',
         ];
