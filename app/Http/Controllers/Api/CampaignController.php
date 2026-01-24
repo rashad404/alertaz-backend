@@ -184,10 +184,12 @@ class CampaignController extends Controller
             $rules['email_sender'] = ['required', 'string', 'in:' . implode(',', $availableEmailAddresses)];
             $rules['email_subject_template'] = ['required', 'string', 'max:500'];
             $rules['email_body_template'] = ['required', 'string', 'max:50000'];
+            $rules['email_display_name'] = ['nullable', 'string', 'max:100'];
         } else {
             $rules['email_sender'] = ['nullable', 'string'];
             $rules['email_subject_template'] = ['nullable', 'string', 'max:500'];
             $rules['email_body_template'] = ['nullable', 'string', 'max:50000'];
+            $rules['email_display_name'] = ['nullable', 'string', 'max:100'];
         }
 
         $validator = Validator::make($request->all(), $rules);
@@ -247,6 +249,7 @@ class CampaignController extends Controller
             'channel' => $channel,
             'sender' => $request->input('sender'),
             'email_sender' => $request->input('email_sender'),
+            'email_display_name' => $request->input('email_display_name'),
             'message_template' => $request->input('message_template'),
             'email_subject_template' => $request->input('email_subject_template'),
             'email_body_template' => $request->input('email_body_template'),
@@ -317,6 +320,7 @@ class CampaignController extends Controller
             'channel' => ['nullable', 'in:sms,email,both'],
             'sender' => ['nullable', 'string', 'max:255'],
             'email_sender' => ['nullable', 'string', 'in:' . implode(',', $availableEmailAddresses)],
+            'email_display_name' => ['nullable', 'string', 'max:100'],
             'message_template' => ['nullable', 'string', 'max:' . $maxMessageLength],
             'email_subject_template' => ['nullable', 'string', 'max:500'],
             'email_body_template' => ['nullable', 'string', 'max:50000'],
@@ -365,6 +369,10 @@ class CampaignController extends Controller
 
         if ($request->has('email_sender')) {
             $campaign->email_sender = $request->input('email_sender');
+        }
+
+        if ($request->has('email_display_name')) {
+            $campaign->email_display_name = $request->input('email_display_name');
         }
 
         if ($request->has('message_template')) {
@@ -831,6 +839,8 @@ class CampaignController extends Controller
             'name' => $campaign->name . ' (copy)',
             'channel' => $campaign->channel ?? 'sms',
             'sender' => $campaign->sender,
+            'email_sender' => $campaign->email_sender,
+            'email_display_name' => $campaign->email_display_name,
             'message_template' => $campaign->message_template,
             'email_subject_template' => $campaign->email_subject_template,
             'email_body_template' => $campaign->email_body_template,
@@ -1555,8 +1565,11 @@ class CampaignController extends Controller
         $emailSenderEmail = $emailSenderDetails['email'];
         $emailSenderName = $emailSenderDetails['name'];
 
+        // Use campaign's email_display_name if set, otherwise use sender name
+        $displayName = $campaign->email_display_name ?? $emailSenderName;
+
         // Convert plain text to HTML email
-        $bodyHtml = $this->convertToHtmlEmail($bodyText, $subject, $emailSenderName);
+        $bodyHtml = $this->convertToHtmlEmail($bodyText, $subject, $displayName);
 
         $cost = $costPerEmail;
 

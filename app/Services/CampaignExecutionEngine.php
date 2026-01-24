@@ -398,8 +398,11 @@ HTML;
             $emailSenderEmail = $emailSenderDetails['email'];
             $emailSenderName = $emailSenderDetails['name'];
 
+            // Use campaign's email_display_name if set, otherwise use sender name
+            $displayName = $campaign->email_display_name ?? $emailSenderName;
+
             // Convert plain text to HTML email
-            $bodyHtml = $this->convertToHtmlEmail($bodyText, $subject, $emailSenderName);
+            $bodyHtml = $this->convertToHtmlEmail($bodyText, $subject, $displayName);
 
             // Calculate cost
             $cost = config('app.email_cost_per_message', 0.01);
