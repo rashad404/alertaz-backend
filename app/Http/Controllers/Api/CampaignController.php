@@ -732,6 +732,8 @@ class CampaignController extends Controller
             'status' => 'success',
             'data' => [
                 'total_count' => $previewData['total_count'],
+                'sms_total' => $previewData['sms_total'] ?? 0,
+                'email_total' => $previewData['email_total'] ?? 0,
                 'previews' => $previewData['previews'],
                 'campaign' => $campaign,
             ],
