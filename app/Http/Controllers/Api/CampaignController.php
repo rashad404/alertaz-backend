@@ -1511,7 +1511,10 @@ class CampaignController extends Controller
         // Render subject and body
         // Render templates with fallback for missing variables (for test sends)
         $subject = $templateRenderer->renderWithFallback($campaign->email_subject_template ?? '', $sampleContact);
-        $body = $templateRenderer->renderWithFallback($campaign->email_body_template ?? '', $sampleContact);
+        $bodyText = $templateRenderer->renderWithFallback($campaign->email_body_template ?? '', $sampleContact);
+
+        // Convert plain text to HTML email with proper formatting
+        $bodyHtml = $this->convertToHtmlEmail($bodyText, $subject, $campaign->sender);
 
         $cost = $costPerEmail;
 
@@ -1539,7 +1542,8 @@ class CampaignController extends Controller
                 'contact_id' => $sampleContact->id ?: null,
                 'to_email' => $email,
                 'subject' => $subject,
-                'body_html' => $body,
+                'body_html' => $bodyHtml,
+                'body_text' => $bodyText,
                 'from_name' => $campaign->sender,
                 'cost' => 0,
                 'status' => 'sent',
@@ -1553,8 +1557,8 @@ class CampaignController extends Controller
                     $user,
                     $email,
                     $subject,
-                    $body,
-                    null, // bodyText
+                    $bodyHtml,
+                    $bodyText, // plain text version
                     null, // toName
                     null, // fromEmail
                     $campaign->sender, // fromName
@@ -1587,6 +1591,53 @@ class CampaignController extends Controller
             'error' => $error,
             'test_mode' => $globalTestMode,
         ];
+    }
+
+    /**
+     * Convert plain text email body to HTML with proper formatting
+     */
+    protected function convertToHtmlEmail(string $body, string $subject, ?string $senderName = null): string
+    {
+        // Convert newlines to <br> and escape HTML entities
+        $htmlBody = nl2br(htmlspecialchars($body, ENT_QUOTES, 'UTF-8'));
+
+        $senderDisplay = $senderName ?? 'Alert.az';
+        $year = date('Y');
+
+        return <<<HTML
+<!DOCTYPE html>
+<html lang="az">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 0; font-family: Arial, Helvetica, sans-serif; background-color: #f3f4f6;">
+    <table width="100%" cellspacing="0" cellpadding="0" style="background-color: #f3f4f6;">
+        <tr>
+            <td align="center" style="padding: 40px 20px;">
+                <table width="600" cellspacing="0" cellpadding="0" style="max-width: 600px; width: 100%;">
+                    <tr>
+                        <td style="background-color: #515BC3; padding: 30px; text-align: center; border-radius: 12px 12px 0 0;">
+                            <h1 style="margin: 0; color: #ffffff; font-size: 24px;">{$senderDisplay}</h1>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="background-color: #ffffff; padding: 30px;">
+                            <div style="color: #4B5563; font-size: 15px; line-height: 1.6;">{$htmlBody}</div>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="background-color: #F9FAFB; padding: 20px 30px; border-radius: 0 0 12px 12px; text-align: center;">
+                            <p style="margin: 0; font-size: 12px; color: #9CA3AF;">&copy; {$year} {$senderDisplay}</p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
+HTML;
     }
 
     /**
