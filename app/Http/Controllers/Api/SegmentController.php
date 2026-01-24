@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\ClientAttributeSchema;
 use App\Services\SegmentQueryBuilder;
+use App\Services\TemplateRenderer;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -12,10 +13,12 @@ use Illuminate\Support\Facades\Validator;
 class SegmentController extends Controller
 {
     protected SegmentQueryBuilder $queryBuilder;
+    protected TemplateRenderer $templateRenderer;
 
-    public function __construct(SegmentQueryBuilder $queryBuilder)
+    public function __construct(SegmentQueryBuilder $queryBuilder, TemplateRenderer $templateRenderer)
     {
         $this->queryBuilder = $queryBuilder;
+        $this->templateRenderer = $templateRenderer;
     }
 
     /**
@@ -181,5 +184,131 @@ class SegmentController extends Controller
             'status' => 'success',
             'message' => 'Filter is valid',
         ], 200);
+    }
+
+    /**
+     * Preview rendered messages for a segment filter with custom templates
+     * Used by campaign edit page to preview messages before saving
+     *
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function previewMessages(Request $request): JsonResponse
+    {
+        $client = $request->attributes->get('client');
+
+        $validator = Validator::make($request->all(), [
+            'filter' => ['required', 'array'],
+            'filter.logic' => ['nullable', 'in:AND,OR'],
+            'filter.conditions' => ['required', 'array', 'min:1'],
+            'filter.conditions.*.key' => ['required', 'string'],
+            'filter.conditions.*.operator' => ['required', 'string'],
+            'filter.conditions.*.value' => ['nullable'],
+            'channel' => ['required', 'in:sms,email,both'],
+            'message_template' => ['nullable', 'string'],
+            'email_subject_template' => ['nullable', 'string'],
+            'email_body_template' => ['nullable', 'string'],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:50'],
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Validation failed',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $filter = $request->input('filter');
+        $channel = $request->input('channel');
+        $messageTemplate = $request->input('message_template', '');
+        $emailSubjectTemplate = $request->input('email_subject_template', '');
+        $emailBodyTemplate = $request->input('email_body_template', '');
+        $page = $request->input('page', 1);
+        $perPage = $request->input('per_page', 10);
+
+        try {
+            // Get query for matching contacts
+            $query = $this->queryBuilder->getMatchesQuery($client->id, $filter);
+
+            // For "both" channel, include contacts with valid phone OR valid email
+            if ($channel === 'both') {
+                $allContacts = $query->get();
+                $filteredContacts = $allContacts->filter(function ($contact) {
+                    return $contact->canReceiveSms() || $contact->canReceiveEmail();
+                });
+                $totalCount = $filteredContacts->count();
+                // Paginate manually
+                $contacts = $filteredContacts->slice(($page - 1) * $perPage, $perPage)->values();
+            } elseif ($channel === 'email') {
+                $allContacts = $query->get();
+                $filteredContacts = $allContacts->filter(function ($contact) {
+                    return $contact->canReceiveEmail();
+                });
+                $totalCount = $filteredContacts->count();
+                $contacts = $filteredContacts->slice(($page - 1) * $perPage, $perPage)->values();
+            } else {
+                // SMS only - no additional filtering needed
+                $totalCount = $query->count();
+                $contacts = $query->skip(($page - 1) * $perPage)->take($perPage)->get();
+            }
+
+            // Render messages for each contact
+            $plannedContacts = $contacts->map(function ($contact) use ($filter, $channel, $messageTemplate, $emailSubjectTemplate, $emailBodyTemplate) {
+                $contactData = [
+                    'contact_id' => $contact->id,
+                    'phone' => $contact->phone,
+                    'email' => $contact->getEmailForValidation(),
+                    'can_receive_sms' => $contact->canReceiveSms(),
+                    'can_receive_email' => $contact->canReceiveEmail(),
+                    'message' => null,
+                    'email_subject' => null,
+                    'email_body' => null,
+                    'segments' => 0,
+                    'attributes' => $contact->attributes,
+                ];
+
+                // Render SMS message if needed
+                if (($channel === 'sms' || $channel === 'both') && $messageTemplate) {
+                    $renderedMessage = $this->templateRenderer->render($messageTemplate, $contact, $filter);
+                    $contactData['message'] = $this->templateRenderer->sanitizeForSMS($renderedMessage);
+                    $contactData['segments'] = $this->templateRenderer->calculateSMSSegments($contactData['message']);
+                }
+
+                // Render email if needed
+                if (($channel === 'email' || $channel === 'both') && $emailBodyTemplate) {
+                    $contactData['email_subject'] = $emailSubjectTemplate
+                        ? $this->templateRenderer->render($emailSubjectTemplate, $contact, $filter)
+                        : null;
+                    $contactData['email_body'] = $this->templateRenderer->render($emailBodyTemplate, $contact, $filter);
+                }
+
+                return $contactData;
+            });
+
+            return response()->json([
+                'status' => 'success',
+                'data' => [
+                    'contacts' => $plannedContacts,
+                    'total' => $totalCount,
+                    'page' => $page,
+                    'per_page' => $perPage,
+                    'total_pages' => ceil($totalCount / $perPage),
+                ],
+            ], 200);
+        } catch (\Exception $e) {
+            \Log::error('Segment preview messages error', [
+                'client_id' => $client->id,
+                'filter' => $filter,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to preview messages',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
     }
 }

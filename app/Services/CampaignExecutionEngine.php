@@ -189,10 +189,11 @@ class CampaignExecutionEngine
     protected function sendSmsToContact(Campaign $campaign, Contact $contact, User $user, bool $mockMode): array
     {
         try {
-            // Render message template
+            // Render message template with segment filter for context-aware variable extraction
             $message = $this->templateRenderer->render(
                 $campaign->message_template,
-                $contact
+                $contact,
+                $campaign->segment_filter
             );
 
             // Sanitize message
@@ -327,15 +328,19 @@ class CampaignExecutionEngine
         }
 
         try {
-            // Render email subject and body templates
+            // Render email subject and body templates with segment filter for context-aware variable extraction
+            $segmentFilter = $campaign->segment_filter;
+
             $subject = $this->templateRenderer->render(
                 $campaign->email_subject_template ?? '',
-                $contact
+                $contact,
+                $segmentFilter
             );
 
             $body = $this->templateRenderer->render(
                 $campaign->email_body_template ?? '',
-                $contact
+                $contact,
+                $segmentFilter
             );
 
             // Calculate cost
@@ -655,8 +660,18 @@ class CampaignExecutionEngine
             $query->whereNotIn('id', $cooldownContactIds);
         }
 
-        // For email campaigns, filter out invalid emails and compute accurate count
-        if ($campaign->requiresEmail()) {
+        // For "both" channel: include contacts with valid phone OR valid email
+        // For email-only: filter by valid email
+        // For sms-only: no email filtering needed
+        if ($campaign->channel === 'both') {
+            $allContacts = $query->get();
+            $filteredContacts = $allContacts->filter(function ($contact) {
+                return $contact->canReceiveSms() || $contact->canReceiveEmail();
+            });
+            $totalPlanned = $filteredContacts->count();
+            $offset = ($page - 1) * $perPage;
+            $contacts = $filteredContacts->slice($offset, $perPage)->values();
+        } elseif ($campaign->requiresEmail()) {
             $allContacts = $query->get();
             $filteredContacts = $allContacts->filter(function ($contact) {
                 $email = $contact->getEmailForValidation();
@@ -680,6 +695,8 @@ class CampaignExecutionEngine
                 'contact_id' => $contact->id,
                 'phone' => $contact->phone,
                 'email' => $contact->getEmailForValidation(),
+                'can_receive_sms' => $contact->canReceiveSms(),
+                'can_receive_email' => $contact->canReceiveEmail(),
                 'message' => null,
                 'email_subject' => null,
                 'email_body' => null,
@@ -687,11 +704,15 @@ class CampaignExecutionEngine
                 'attributes' => $contact->attributes,
             ];
 
+            // Get segment filter for context-aware rendering
+            $segmentFilter = $campaign->segment_filter;
+
             // Render SMS message if channel is sms or both
             if ($campaign->requiresPhone() && $campaign->message_template) {
                 $message = $this->templateRenderer->render(
                     $campaign->message_template,
-                    $contact
+                    $contact,
+                    $segmentFilter
                 );
                 $message = $this->templateRenderer->sanitizeForSMS($message);
                 $contactData['message'] = $message;
@@ -703,13 +724,15 @@ class CampaignExecutionEngine
                 if ($campaign->email_subject_template) {
                     $contactData['email_subject'] = $this->templateRenderer->render(
                         $campaign->email_subject_template,
-                        $contact
+                        $contact,
+                        $segmentFilter
                     );
                 }
                 if ($campaign->email_body_template) {
                     $contactData['email_body'] = $this->templateRenderer->render(
                         $campaign->email_body_template,
-                        $contact
+                        $contact,
+                        $segmentFilter
                     );
                 }
             }
@@ -761,8 +784,17 @@ class CampaignExecutionEngine
             $query->whereNotIn('id', $cooldownContactIds);
         }
 
-        // For email campaigns, filter out invalid emails
-        if ($campaign->requiresEmail()) {
+        // For "both" channel: include contacts with valid phone OR valid email
+        // For email-only: filter by valid email
+        // For sms-only: no email filtering needed
+        if ($campaign->channel === 'both') {
+            $allContacts = $query->get();
+            $filteredContacts = $allContacts->filter(function ($contact) {
+                return $contact->canReceiveSms() || $contact->canReceiveEmail();
+            });
+            $totalCount = $filteredContacts->count();
+            $contacts = $filteredContacts->take($limit)->values();
+        } elseif ($campaign->requiresEmail()) {
             $allContacts = $query->get();
             $filteredContacts = $allContacts->filter(function ($contact) {
                 $email = $contact->getEmailForValidation();
@@ -779,6 +811,9 @@ class CampaignExecutionEngine
 
         $previews = [];
 
+        // Get segment filter for context-aware rendering
+        $segmentFilter = $campaign->segment_filter;
+
         foreach ($contacts as $contact) {
             $preview = [
                 'phone' => $contact->phone,
@@ -792,7 +827,8 @@ class CampaignExecutionEngine
             if ($campaign->requiresPhone() && !empty($campaign->message_template)) {
                 $smsMessage = $this->templateRenderer->render(
                     $campaign->message_template,
-                    $contact
+                    $contact,
+                    $segmentFilter
                 );
                 $smsMessage = $this->templateRenderer->sanitizeForSMS($smsMessage);
                 $preview['sms_message'] = $smsMessage;
@@ -807,13 +843,15 @@ class CampaignExecutionEngine
                 if (!empty($campaign->email_subject_template)) {
                     $preview['email_subject'] = $this->templateRenderer->render(
                         $campaign->email_subject_template,
-                        $contact
+                        $contact,
+                        $segmentFilter
                     );
                 }
                 if (!empty($campaign->email_body_template)) {
                     $preview['email_body'] = $this->templateRenderer->render(
                         $campaign->email_body_template,
-                        $contact
+                        $contact,
+                        $segmentFilter
                     );
                 }
             }

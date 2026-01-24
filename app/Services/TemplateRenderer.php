@@ -12,15 +12,19 @@ class TemplateRenderer
      *
      * @param string $template
      * @param Contact $contact
+     * @param array|null $segmentFilter Optional segment filter to determine which array item matched
      * @return string
      */
-    public function render(string $template, Contact $contact): string
+    public function render(string $template, Contact $contact, ?array $segmentFilter = null): string
     {
         $message = $template;
         $attributes = $contact->attributes ?? [];
 
         // Add phone to available variables
         $attributes['phone'] = $contact->phone;
+
+        // Extract array item fields (hosting_name, hosting_expiry, domain_name, domain_expiry)
+        $attributes = $this->extractArrayItemFields($attributes, $template, $segmentFilter);
 
         // Replace all {{variable}} placeholders
         foreach ($attributes as $key => $value) {
@@ -37,6 +41,206 @@ class TemplateRenderer
         }
 
         return $message;
+    }
+
+    /**
+     * Extract fields from array items dynamically based on template variables
+     * Auto-detects patterns like {{xxx_name}}, {{xxx_expiry}} and finds matching arrays
+     *
+     * Example: {{hosting_name}} will look for arrays: hostings, hosting_list, hosting
+     * and extract the 'name' field from the matched item
+     *
+     * @param array $attributes
+     * @param string $template
+     * @param array|null $segmentFilter
+     * @return array
+     */
+    protected function extractArrayItemFields(array $attributes, string $template, ?array $segmentFilter = null): array
+    {
+        // Find all template variables
+        preg_match_all('/\{\{([a-zA-Z0-9_]+)\}\}/', $template, $matches);
+        $templateVars = array_unique($matches[1] ?? []);
+
+        // Group variables by potential array prefix (e.g., hosting_name, hosting_expiry -> hosting)
+        $prefixGroups = [];
+        foreach ($templateVars as $var) {
+            // Skip if variable already exists in attributes
+            if (isset($attributes[$var])) {
+                continue;
+            }
+
+            // Check if variable follows pattern: prefix_field (e.g., hosting_name, domain_expiry)
+            if (preg_match('/^([a-zA-Z0-9]+)_([a-zA-Z0-9_]+)$/', $var, $varMatch)) {
+                $prefix = $varMatch[1];
+                $field = $varMatch[2];
+
+                if (!isset($prefixGroups[$prefix])) {
+                    $prefixGroups[$prefix] = [];
+                }
+                $prefixGroups[$prefix][$field] = $var; // field => template_var
+            }
+        }
+
+        // For each prefix group, try to find a matching array in attributes
+        foreach ($prefixGroups as $prefix => $fieldMappings) {
+            // Try common array naming patterns
+            $possibleArrayKeys = [
+                $prefix . 's',      // hosting -> hostings
+                $prefix . '_list',  // vps -> vps_list
+                $prefix . 'es',     // box -> boxes
+                $prefix,            // if already plural or exact match
+            ];
+
+            $arrayKey = null;
+            $items = null;
+
+            foreach ($possibleArrayKeys as $key) {
+                if (isset($attributes[$key]) && is_array($attributes[$key]) && !empty($attributes[$key])) {
+                    // Check if it's an array of objects (not a simple array)
+                    $firstItem = reset($attributes[$key]);
+                    if (is_array($firstItem)) {
+                        $arrayKey = $key;
+                        $items = $attributes[$key];
+                        break;
+                    }
+                }
+            }
+
+            if (!$items) {
+                continue;
+            }
+
+            // Find the best matching item from the array
+            $matchedItem = $this->findMatchingArrayItem($items, $arrayKey, $segmentFilter);
+
+            if ($matchedItem) {
+                // Extract all requested fields from the matched item
+                foreach ($fieldMappings as $field => $templateVar) {
+                    if (isset($matchedItem[$field])) {
+                        $attributes[$templateVar] = $matchedItem[$field];
+                    }
+                }
+            }
+        }
+
+        return $attributes;
+    }
+
+    /**
+     * Find the best matching item from an array based on segment filter or default logic
+     * Works with any array structure - automatically detects expiry/active fields
+     *
+     * @param array $items
+     * @param string $arrayKey
+     * @param array|null $segmentFilter
+     * @return array|null
+     */
+    protected function findMatchingArrayItem(array $items, string $arrayKey, ?array $segmentFilter = null): ?array
+    {
+        // If segment filter specifies a condition on this array, find the matching item
+        if ($segmentFilter && isset($segmentFilter['conditions'])) {
+            foreach ($segmentFilter['conditions'] as $condition) {
+                if (isset($condition['key']) && $condition['key'] === $arrayKey) {
+                    $operator = $condition['operator'] ?? '';
+                    $value = $condition['value'] ?? null;
+
+                    // Handle expiry-based operators (works with any 'expiry' field)
+                    $expiryOperators = [
+                        'any_expiry_in_days', 'any_expiry_within', 'any_expiry_today',
+                        'any_expiry_after', 'any_expiry_expired_since'
+                    ];
+
+                    if (in_array($operator, $expiryOperators)) {
+                        $matchedItem = $this->findItemByExpiryCondition($items, $operator, $value);
+                        if ($matchedItem) {
+                            return $matchedItem;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Default fallback: find best item based on common patterns
+        return $this->findBestDefaultItem($items);
+    }
+
+    /**
+     * Find an item that matches an expiry-based condition
+     *
+     * @param array $items
+     * @param string $operator
+     * @param mixed $value
+     * @return array|null
+     */
+    protected function findItemByExpiryCondition(array $items, string $operator, $value): ?array
+    {
+        $today = now()->startOfDay();
+
+        foreach ($items as $item) {
+            // Look for any date field (expiry, expiry_date, expires_at, etc.)
+            $expiryValue = $item['expiry'] ?? $item['expiry_date'] ?? $item['expires_at'] ?? null;
+            if (!$expiryValue) continue;
+
+            try {
+                $expiryDate = \Carbon\Carbon::parse($expiryValue)->startOfDay();
+                $daysUntilExpiry = $today->diffInDays($expiryDate, false);
+
+                switch ($operator) {
+                    case 'any_expiry_today':
+                        if ($daysUntilExpiry === 0) return $item;
+                        break;
+                    case 'any_expiry_in_days':
+                        if ($daysUntilExpiry == $value) return $item;
+                        break;
+                    case 'any_expiry_within':
+                        if ($daysUntilExpiry >= 0 && $daysUntilExpiry <= $value) return $item;
+                        break;
+                    case 'any_expiry_after':
+                        if ($daysUntilExpiry > $value) return $item;
+                        break;
+                    case 'any_expiry_expired_since':
+                        if ($daysUntilExpiry < 0 && abs($daysUntilExpiry) <= $value) return $item;
+                        break;
+                }
+            } catch (\Exception $e) {
+                continue;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Find the best default item from an array (first active, or soonest expiring)
+     *
+     * @param array $items
+     * @return array|null
+     */
+    protected function findBestDefaultItem(array $items): ?array
+    {
+        if (empty($items)) {
+            return null;
+        }
+
+        // Try to find active items (check common active/status field patterns)
+        $activeItems = array_filter($items, function($item) {
+            // Check various "active" field patterns
+            if (isset($item['active']) && $item['active']) return true;
+            if (isset($item['is_active']) && $item['is_active']) return true;
+            if (isset($item['status']) && in_array($item['status'], ['active', 'enabled', 'valid'])) return true;
+            return false;
+        });
+
+        $itemsToSort = !empty($activeItems) ? $activeItems : $items;
+
+        // Sort by expiry date (soonest first) - check common expiry field patterns
+        usort($itemsToSort, function($a, $b) {
+            $expiryA = $a['expiry'] ?? $a['expiry_date'] ?? $a['expires_at'] ?? '9999-12-31';
+            $expiryB = $b['expiry'] ?? $b['expiry_date'] ?? $b['expires_at'] ?? '9999-12-31';
+            return strcmp($expiryA, $expiryB);
+        });
+
+        return reset($itemsToSort) ?: null;
     }
 
     /**

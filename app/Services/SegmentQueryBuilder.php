@@ -501,7 +501,8 @@ class SegmentQueryBuilder
         for ($i = 0; $i <= $days; $i++) {
             $dates[] = now()->addDays($i)->format('Y-m-d');
         }
-        $pattern = '"expiry"[[:space:]]*:[[:space:]]*"(' . implode('|', $dates) . ')"';
+        // Array-specific pattern: "arrayKey":[...{"expiry":"date"...}...]
+        $pattern = '"' . $key . '"[[:space:]]*:[[:space:]]*\\[[^\\]]*"expiry"[[:space:]]*:[[:space:]]*"(' . implode('|', $dates) . ')"';
 
         $query->whereRaw(
             "`attributes` REGEXP ?",
@@ -530,11 +531,14 @@ class SegmentQueryBuilder
         $key = $this->extractKey($jsonPath);
         $targetDate = now()->addDays($days)->format('Y-m-d');
 
-        // MariaDB compatible: search for expiry date pattern in JSON string
-        // This matches "expiry":"2026-01-26" or "expiry": "2026-01-26" in the JSON
+        // MariaDB compatible: search for expiry date within the specific array
+        // Pattern: "arrayKey":[...{"expiry":"date"...}...]
+        // This ensures the expiry belongs to the correct array, not just anywhere in JSON
+        // Note: In PHP strings, \\\\ becomes \\ which MySQL interprets as escaped backslash.
+        // We need \[ in MySQL, so we use \\[ in PHP (double backslash for PHP string literal)
         $query->whereRaw(
             "`attributes` REGEXP ?",
-            ['"expiry"[[:space:]]*:[[:space:]]*"' . $targetDate . '"'],
+            ['"' . $key . '"[[:space:]]*:[[:space:]]*\\[[^\\]]*"expiry"[[:space:]]*:[[:space:]]*"' . $targetDate . '"'],
             $boolean
         );
     }
@@ -556,15 +560,15 @@ class SegmentQueryBuilder
         $key = $this->extractKey($jsonPath);
         $targetDate = now()->addDays($days + 1)->format('Y-m-d');
 
-        // MariaDB compatible: Check for dates >= targetDate+1 in the JSON
-        // Using LIKE with a pattern that matches dates >= target year
-        // This is approximate but functional for most cases
+        // MariaDB compatible: Check for dates >= targetDate+1 in the specific array
+        // Array-specific pattern: "arrayKey":[...{"expiry":"date"...}...]
         $year = (int) substr($targetDate, 0, 4);
+        $arrayPrefix = '"' . $key . '"[[:space:]]*:[[:space:]]*\\[[^\\]]*';
         $query->whereRaw(
             "(`attributes` REGEXP ? OR `attributes` REGEXP ?)",
             [
-                '"expiry"[[:space:]]*:[[:space:]]*"' . $year . '-[0-9]{2}-[0-9]{2}"',
-                '"expiry"[[:space:]]*:[[:space:]]*"[' . $year . '-9][0-9]{3}-[0-9]{2}-[0-9]{2}"'
+                $arrayPrefix . '"expiry"[[:space:]]*:[[:space:]]*"' . $year . '-[0-9]{2}-[0-9]{2}"',
+                $arrayPrefix . '"expiry"[[:space:]]*:[[:space:]]*"[' . $year . '-9][0-9]{3}-[0-9]{2}-[0-9]{2}"'
             ],
             $boolean
         );
@@ -592,7 +596,8 @@ class SegmentQueryBuilder
         for ($i = 0; $i <= $days; $i++) {
             $dates[] = now()->subDays($i)->format('Y-m-d');
         }
-        $pattern = '"expiry"[[:space:]]*:[[:space:]]*"(' . implode('|', $dates) . ')"';
+        // Array-specific pattern: "arrayKey":[...{"expiry":"date"...}...]
+        $pattern = '"' . $key . '"[[:space:]]*:[[:space:]]*\\[[^\\]]*"expiry"[[:space:]]*:[[:space:]]*"(' . implode('|', $dates) . ')"';
 
         $query->whereRaw(
             "`attributes` REGEXP ?",
@@ -609,10 +614,10 @@ class SegmentQueryBuilder
         $key = $this->extractKey($jsonPath);
         $today = now()->format('Y-m-d');
 
-        // MariaDB compatible: search for today's date in expiry field
+        // Array-specific pattern: "arrayKey":[...{"expiry":"date"...}...]
         $query->whereRaw(
             "`attributes` REGEXP ?",
-            ['"expiry"[[:space:]]*:[[:space:]]*"' . $today . '"'],
+            ['"' . $key . '"[[:space:]]*:[[:space:]]*\\[[^\\]]*"expiry"[[:space:]]*:[[:space:]]*"' . $today . '"'],
             $boolean
         );
     }

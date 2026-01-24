@@ -188,6 +188,7 @@ Route::middleware('auth.client')->group(function () {
     // Segment Builder
     Route::get('/segments/attributes', [SegmentController::class, 'getAttributes']);
     Route::post('/segments/preview', [SegmentController::class, 'preview']);
+    Route::post('/segments/preview-messages', [SegmentController::class, 'previewMessages']);
     Route::post('/segments/validate', [SegmentController::class, 'validate']);
 
     // Saved Segments
