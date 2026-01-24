@@ -31,6 +31,7 @@ class Campaign extends Model
         'client_id',
         'name',
         'sender',
+        'email_sender',
         'message_template',
         'channel',
         'email_subject_template',

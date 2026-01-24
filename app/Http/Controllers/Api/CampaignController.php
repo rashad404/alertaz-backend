@@ -8,6 +8,7 @@ use App\Models\SavedSegment;
 use App\Models\SmsMessage;
 use App\Models\EmailMessage;
 use App\Models\UserSender;
+use App\Models\UserEmailSender;
 use App\Services\SegmentQueryBuilder;
 use App\Services\CampaignExecutionEngine;
 use Illuminate\Http\JsonResponse;
@@ -113,6 +114,27 @@ class CampaignController extends Controller
     }
 
     /**
+     * Get available email senders for the user
+     *
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function getEmailSenders(Request $request): JsonResponse
+    {
+        $client = $request->attributes->get('client');
+        $senders = UserEmailSender::getAvailableSenders($client->user_id);
+        $default = UserEmailSender::getDefault();
+
+        return response()->json([
+            'status' => 'success',
+            'data' => [
+                'senders' => $senders,
+                'default' => $default,
+            ],
+        ], 200);
+    }
+
+    /**
      * Create campaign
      *
      * @param Request $request
@@ -124,6 +146,8 @@ class CampaignController extends Controller
 
         // Get available senders for validation
         $availableSenders = UserSender::getAvailableSenders($client->user_id);
+        $availableEmailSenders = UserEmailSender::getAvailableSenders($client->user_id);
+        $availableEmailAddresses = array_column($availableEmailSenders, 'email');
 
         $channel = $request->input('channel', 'sms');
         $maxMessageLength = config('app.sms_max_message_length', 500);
@@ -151,15 +175,17 @@ class CampaignController extends Controller
             $rules['sender'] = ['required', 'string', 'max:11', 'in:' . implode(',', $availableSenders)];
             $rules['message_template'] = ['required', 'string', 'max:' . $maxMessageLength];
         } else {
-            $rules['sender'] = ['nullable', 'string', 'max:255']; // Used as from_name for email
+            $rules['sender'] = ['nullable', 'string', 'max:255'];
             $rules['message_template'] = ['nullable', 'string', 'max:' . $maxMessageLength];
         }
 
         // Email-specific validation
         if ($channel === 'email' || $channel === 'both') {
+            $rules['email_sender'] = ['required', 'string', 'in:' . implode(',', $availableEmailAddresses)];
             $rules['email_subject_template'] = ['required', 'string', 'max:500'];
             $rules['email_body_template'] = ['required', 'string', 'max:50000'];
         } else {
+            $rules['email_sender'] = ['nullable', 'string'];
             $rules['email_subject_template'] = ['nullable', 'string', 'max:500'];
             $rules['email_body_template'] = ['nullable', 'string', 'max:50000'];
         }
@@ -220,6 +246,7 @@ class CampaignController extends Controller
             'name' => $request->input('name'),
             'channel' => $channel,
             'sender' => $request->input('sender'),
+            'email_sender' => $request->input('email_sender'),
             'message_template' => $request->input('message_template'),
             'email_subject_template' => $request->input('email_subject_template'),
             'email_body_template' => $request->input('email_body_template'),
@@ -278,6 +305,8 @@ class CampaignController extends Controller
 
         // Get available senders for validation
         $availableSenders = UserSender::getAvailableSenders($client->user_id);
+        $availableEmailSenders = UserEmailSender::getAvailableSenders($client->user_id);
+        $availableEmailAddresses = array_column($availableEmailSenders, 'email');
 
         // Determine channel (use existing if not changing)
         $channel = $request->input('channel', $campaign->channel ?? 'sms');
@@ -287,6 +316,7 @@ class CampaignController extends Controller
             'name' => ['nullable', 'string', 'max:255'],
             'channel' => ['nullable', 'in:sms,email,both'],
             'sender' => ['nullable', 'string', 'max:255'],
+            'email_sender' => ['nullable', 'string', 'in:' . implode(',', $availableEmailAddresses)],
             'message_template' => ['nullable', 'string', 'max:' . $maxMessageLength],
             'email_subject_template' => ['nullable', 'string', 'max:500'],
             'email_body_template' => ['nullable', 'string', 'max:50000'],
@@ -331,6 +361,10 @@ class CampaignController extends Controller
 
         if ($request->has('sender')) {
             $campaign->sender = $request->input('sender');
+        }
+
+        if ($request->has('email_sender')) {
+            $campaign->email_sender = $request->input('email_sender');
         }
 
         if ($request->has('message_template')) {
@@ -1513,8 +1547,16 @@ class CampaignController extends Controller
         $subject = $templateRenderer->renderWithFallback($campaign->email_subject_template ?? '', $sampleContact);
         $bodyText = $templateRenderer->renderWithFallback($campaign->email_body_template ?? '', $sampleContact);
 
-        // Convert plain text to HTML email with proper formatting
-        $bodyHtml = $this->convertToHtmlEmail($bodyText, $subject, $campaign->sender);
+        // Get email sender details from campaign or use default
+        $emailSenderDetails = UserEmailSender::getByEmail($campaign->email_sender ?? '');
+        if (!$emailSenderDetails) {
+            $emailSenderDetails = UserEmailSender::getDefault();
+        }
+        $emailSenderEmail = $emailSenderDetails['email'];
+        $emailSenderName = $emailSenderDetails['name'];
+
+        // Convert plain text to HTML email
+        $bodyHtml = $this->convertToHtmlEmail($bodyText, $subject, $emailSenderName);
 
         $cost = $costPerEmail;
 
@@ -1544,7 +1586,8 @@ class CampaignController extends Controller
                 'subject' => $subject,
                 'body_html' => $bodyHtml,
                 'body_text' => $bodyText,
-                'from_name' => $campaign->sender,
+                'from_email' => $emailSenderEmail,
+                'from_name' => $emailSenderName,
                 'cost' => 0,
                 'status' => 'sent',
                 'is_test' => true,
@@ -1560,8 +1603,8 @@ class CampaignController extends Controller
                     $bodyHtml,
                     $bodyText, // plain text version
                     null, // toName
-                    null, // fromEmail
-                    $campaign->sender, // fromName
+                    $emailSenderEmail, // fromEmail
+                    $emailSenderName, // fromName
                     'campaign',
                     $campaign->client_id,
                     $campaign->id, // campaignId

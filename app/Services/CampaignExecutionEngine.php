@@ -390,8 +390,16 @@ HTML;
                 $segmentFilter
             );
 
+            // Get email sender details from campaign or use default
+            $emailSenderDetails = \App\Models\UserEmailSender::getByEmail($campaign->email_sender ?? '');
+            if (!$emailSenderDetails) {
+                $emailSenderDetails = \App\Models\UserEmailSender::getDefault();
+            }
+            $emailSenderEmail = $emailSenderDetails['email'];
+            $emailSenderName = $emailSenderDetails['name'];
+
             // Convert plain text to HTML email
-            $bodyHtml = $this->convertToHtmlEmail($bodyText, $subject, $campaign->sender);
+            $bodyHtml = $this->convertToHtmlEmail($bodyText, $subject, $emailSenderName);
 
             // Calculate cost
             $cost = config('app.email_cost_per_message', 0.01);
@@ -429,7 +437,8 @@ HTML;
                     'subject' => $subject,
                     'body_html' => $bodyHtml,
                     'body_text' => $bodyText,
-                    'from_name' => $campaign->sender,
+                    'from_email' => $emailSenderEmail,
+                    'from_name' => $emailSenderName,
                     'cost' => 0,
                     'status' => 'sent',
                     'is_test' => true,
@@ -446,8 +455,8 @@ HTML;
                     $bodyHtml,
                     $bodyText, // plain text version
                     null, // toName
-                    null, // fromEmail
-                    $campaign->sender, // fromName
+                    $emailSenderEmail, // fromEmail
+                    $emailSenderName, // fromName
                     'campaign',
                     $campaign->client_id,
                     $campaign->id, // campaignId

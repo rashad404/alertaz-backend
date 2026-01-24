@@ -170,6 +170,7 @@ Route::middleware('auth.sms')->group(function () {
 Route::middleware('auth.client')->group(function () {
     // Available Senders for the user
     Route::get('/senders', [CampaignController::class, 'getSenders']);
+    Route::get('/email-senders', [CampaignController::class, 'getEmailSenders']);
 
     // Schema Management
     Route::post('/clients/schema', [ClientSchemaController::class, 'register']);
