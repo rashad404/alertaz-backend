@@ -156,6 +156,8 @@ class CampaignController extends Controller
         $rules = [
             'name' => ['required', 'string', 'max:255'],
             'channel' => ['nullable', 'in:sms,email,both'],
+            'target_type' => ['nullable', 'in:customer,service'],
+            'service_type_key' => ['nullable', 'string'],
             'segment_filter' => ['required', 'array'],
             'segment_filter.logic' => ['nullable', 'in:AND,OR'],
             'segment_filter.conditions' => ['required', 'array', 'min:1'],
@@ -163,6 +165,7 @@ class CampaignController extends Controller
             'is_test' => ['nullable', 'boolean'],
             // Automated campaign fields
             'type' => ['nullable', 'in:one_time,automated'],
+            'campaign_type' => ['nullable', 'in:one_time,automated'],
             'check_interval_minutes' => ['nullable', 'integer', 'min:1', 'max:10080'], // max 1 week
             'cooldown_days' => ['nullable', 'integer', 'min:1', 'max:365'],
             'ends_at' => ['nullable', 'date', 'after:now'],
@@ -213,19 +216,30 @@ class CampaignController extends Controller
             }
         }
 
+        // Get target type and service type
+        $targetType = $request->input('target_type', 'customer');
+        $serviceTypeId = null;
+
+        if ($targetType === 'service' && $request->input('service_type_key')) {
+            $serviceType = \App\Models\ServiceType::where('client_id', $client->id)
+                ->where('key', $request->input('service_type_key'))
+                ->first();
+            $serviceTypeId = $serviceType ? $serviceType->id : null;
+        }
+
         // Calculate target count
         $segmentFilter = $request->input('segment_filter');
-        $targetCount = $this->queryBuilder->countMatches($client->id, $segmentFilter);
+        $targetCount = $this->queryBuilder->countMatches($client->id, $segmentFilter, $targetType);
 
         if ($targetCount === 0) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'No contacts match the segment filter',
+                'message' => 'No records match the segment filter',
             ], 422);
         }
 
-        // Determine campaign type
-        $type = $request->input('type', 'one_time');
+        // Determine campaign type (accept both 'campaign_type' and 'type' for compatibility)
+        $type = $request->input('campaign_type') ?? $request->input('type', 'one_time');
         $isAutomated = $type === 'automated';
 
         // Validate automated campaign requires check_interval_minutes
@@ -246,6 +260,8 @@ class CampaignController extends Controller
         $campaign = Campaign::create([
             'client_id' => $client->id,
             'name' => $request->input('name'),
+            'target_type' => $targetType,
+            'service_type_id' => $serviceTypeId,
             'channel' => $channel,
             'sender' => $request->input('sender'),
             'email_sender' => $request->input('email_sender'),
@@ -254,13 +270,13 @@ class CampaignController extends Controller
             'email_subject_template' => $request->input('email_subject_template'),
             'email_body_template' => $request->input('email_body_template'),
             'status' => $status,
-            'type' => $type,
+            'campaign_type' => $type,
             'check_interval_minutes' => $isAutomated ? $request->input('check_interval_minutes') : null,
             'cooldown_days' => $request->input('cooldown_days', 30),
             'ends_at' => $isAutomated ? $request->input('ends_at') : null,
             'run_start_hour' => $isAutomated ? $request->input('run_start_hour') : null,
             'run_end_hour' => $isAutomated ? $request->input('run_end_hour') : null,
-            'segment_filter' => $segmentFilter,
+            'filter' => $segmentFilter,
             'scheduled_at' => !$isAutomated ? $request->input('scheduled_at') : null,
             'target_count' => $targetCount,
             'created_by' => $client->user_id,

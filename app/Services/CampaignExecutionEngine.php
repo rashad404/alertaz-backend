@@ -121,6 +121,7 @@ HTML;
             $contacts = $this->queryBuilder->getMatches(
                 $campaign->client_id,
                 $campaign->segment_filter,
+                $campaign->target_type,
                 $campaign->target_count
             );
 
@@ -239,8 +240,7 @@ HTML;
             // Render message template with segment filter for context-aware variable extraction
             $message = $this->templateRenderer->render(
                 $campaign->message_template,
-                $contact,
-                $campaign->segment_filter
+                $contact->getTemplateVariables()
             );
 
             // Sanitize message
@@ -274,7 +274,7 @@ HTML;
             } else {
                 // Real mode: send SMS via QuickSMS
                 $result = $this->sendSMS(
-                    $contact->phone,
+                    $contact->getPhone(),
                     $message,
                     $campaign->sender,
                     $user
@@ -301,7 +301,7 @@ HTML;
                 'client_id' => $campaign->client_id,
                 'campaign_id' => $campaign->id,
                 'contact_id' => $contact->id,
-                'phone' => $contact->phone,
+                'phone' => $contact->getPhone(),
                 'message' => $message,
                 'sender' => $campaign->sender,
                 'cost' => $cost,
@@ -320,7 +320,7 @@ HTML;
             ];
 
         } catch (\Exception $e) {
-            Log::error("Failed to send SMS to {$contact->phone}: " . $e->getMessage());
+            Log::error("Failed to send SMS to {$contact->getPhone()}: " . $e->getMessage());
 
             // Create failed message record
             SmsMessage::create([
@@ -329,7 +329,7 @@ HTML;
                 'client_id' => $campaign->client_id,
                 'campaign_id' => $campaign->id,
                 'contact_id' => $contact->id,
-                'phone' => $contact->phone,
+                'phone' => $contact->getPhone(),
                 'message' => '',
                 'sender' => $campaign->sender,
                 'cost' => 0,
@@ -380,14 +380,12 @@ HTML;
 
             $subject = $this->templateRenderer->render(
                 $campaign->email_subject_template ?? '',
-                $contact,
-                $segmentFilter
+                $contact->getTemplateVariables()
             );
 
             $bodyText = $this->templateRenderer->render(
                 $campaign->email_body_template ?? '',
-                $contact,
-                $segmentFilter
+                $contact->getTemplateVariables()
             );
 
             // Get email sender details from campaign or use default
@@ -635,6 +633,7 @@ HTML;
         $contacts = $this->queryBuilder->getMatches(
             $campaign->client_id,
             $campaign->segment_filter,
+            $campaign->target_type,
             1
         );
 
@@ -703,24 +702,31 @@ HTML;
     {
         $cooldownDays = $campaign->cooldown_days ?? 0;
 
-        // Build query for matching contacts
+        // Build query for matching records (customers or services based on target_type)
         $query = $this->queryBuilder->getMatchesQuery(
             $campaign->client_id,
-            $campaign->segment_filter
+            $campaign->segment_filter,
+            $campaign->target_type
         );
 
-        // Get contact IDs in cooldown for this campaign
-        $cooldownContactIds = [];
+        // Filter by service_type_id if targeting services
+        if ($campaign->target_type === 'service' && $campaign->service_type_id) {
+            $query->where('service_type_id', $campaign->service_type_id);
+        }
+
+        // Get record IDs in cooldown for this campaign
+        $cooldownIds = [];
         if ($cooldownDays > 0) {
-            $cooldownContactIds = \App\Models\CampaignContactLog::where('campaign_id', $campaign->id)
+            $cooldownIds = \App\Models\Cooldown::where('campaign_id', $campaign->id)
+                ->where('target_type', $campaign->target_type)
                 ->where('sent_at', '>', now()->subDays($cooldownDays))
-                ->pluck('contact_id')
+                ->pluck('target_id')
                 ->toArray();
         }
 
-        // Exclude contacts in cooldown
-        if (!empty($cooldownContactIds)) {
-            $query->whereNotIn('id', $cooldownContactIds);
+        // Exclude records in cooldown
+        if (!empty($cooldownIds)) {
+            $query->whereNotIn('id', $cooldownIds);
         }
 
         // Initialize channel-specific totals
@@ -765,7 +771,7 @@ HTML;
         foreach ($contacts as $contact) {
             $contactData = [
                 'contact_id' => $contact->id,
-                'phone' => $contact->phone,
+                'phone' => $contact->getPhone(),
                 'email' => $contact->getEmailForValidation(),
                 'can_receive_sms' => $contact->canReceiveSms(),
                 'can_receive_email' => $contact->canReceiveEmail(),
@@ -773,7 +779,7 @@ HTML;
                 'email_subject' => null,
                 'email_body' => null,
                 'segments' => 0,
-                'attributes' => $contact->attributes,
+                'attributes' => $contact->getTemplateVariables(),
             ];
 
             // Get segment filter for context-aware rendering
@@ -783,8 +789,7 @@ HTML;
             if ($campaign->requiresPhone() && $campaign->message_template) {
                 $message = $this->templateRenderer->render(
                     $campaign->message_template,
-                    $contact,
-                    $segmentFilter
+                    $contact->getTemplateVariables()
                 );
                 $message = $this->templateRenderer->sanitizeForSMS($message);
                 $contactData['message'] = $message;
@@ -799,16 +804,14 @@ HTML;
                 if ($campaign->email_subject_template) {
                     $subject = $this->templateRenderer->render(
                         $campaign->email_subject_template,
-                        $contact,
-                        $segmentFilter
+                        $contact->getTemplateVariables()
                     );
                     $contactData['email_subject'] = $subject;
                 }
                 if ($campaign->email_body_template) {
                     $bodyText = $this->templateRenderer->render(
                         $campaign->email_body_template,
-                        $contact,
-                        $segmentFilter
+                        $contact->getTemplateVariables()
                     );
                     $contactData['email_body'] = $bodyText;
 
@@ -851,24 +854,31 @@ HTML;
     {
         $cooldownDays = $campaign->cooldown_days ?? 0;
 
-        // Build query for matching contacts
+        // Build query for matching records
         $query = $this->queryBuilder->getMatchesQuery(
             $campaign->client_id,
-            $campaign->segment_filter
+            $campaign->segment_filter,
+            $campaign->target_type
         );
 
-        // Get contact IDs in cooldown for this campaign
-        $cooldownContactIds = [];
+        // Filter by service_type_id if targeting services
+        if ($campaign->target_type === 'service' && $campaign->service_type_id) {
+            $query->where('service_type_id', $campaign->service_type_id);
+        }
+
+        // Get record IDs in cooldown for this campaign
+        $cooldownIds = [];
         if ($cooldownDays > 0) {
-            $cooldownContactIds = \App\Models\CampaignContactLog::where('campaign_id', $campaign->id)
+            $cooldownIds = \App\Models\Cooldown::where('campaign_id', $campaign->id)
+                ->where('target_type', $campaign->target_type)
                 ->where('sent_at', '>', now()->subDays($cooldownDays))
-                ->pluck('contact_id')
+                ->pluck('target_id')
                 ->toArray();
         }
 
-        // Exclude contacts in cooldown
-        if (!empty($cooldownContactIds)) {
-            $query->whereNotIn('id', $cooldownContactIds);
+        // Exclude records in cooldown
+        if (!empty($cooldownIds)) {
+            $query->whereNotIn('id', $cooldownIds);
         }
 
         // Initialize channel-specific totals
@@ -912,9 +922,9 @@ HTML;
 
         foreach ($contacts as $contact) {
             $preview = [
-                'phone' => $contact->phone,
+                'phone' => $contact->getPhone(),
                 'email' => $contact->getEmailForValidation(),
-                'attributes' => $contact->attributes,
+                'attributes' => $contact->getTemplateVariables(),
                 'can_receive_sms' => $contact->canReceiveSms(),
                 'can_receive_email' => $contact->canReceiveEmail(),
             ];
@@ -923,8 +933,7 @@ HTML;
             if ($campaign->requiresPhone() && !empty($campaign->message_template)) {
                 $smsMessage = $this->templateRenderer->render(
                     $campaign->message_template,
-                    $contact,
-                    $segmentFilter
+                    $contact->getTemplateVariables()
                 );
                 $smsMessage = $this->templateRenderer->sanitizeForSMS($smsMessage);
                 $preview['sms_message'] = $smsMessage;
@@ -939,15 +948,13 @@ HTML;
                 if (!empty($campaign->email_subject_template)) {
                     $preview['email_subject'] = $this->templateRenderer->render(
                         $campaign->email_subject_template,
-                        $contact,
-                        $segmentFilter
+                        $contact->getTemplateVariables()
                     );
                 }
                 if (!empty($campaign->email_body_template)) {
                     $preview['email_body'] = $this->templateRenderer->render(
                         $campaign->email_body_template,
-                        $contact,
-                        $segmentFilter
+                        $contact->getTemplateVariables()
                     );
                 }
             }
@@ -975,6 +982,7 @@ HTML;
         $contacts = $this->queryBuilder->getMatches(
             $campaign->client_id,
             $campaign->segment_filter,
+            $campaign->target_type,
             PHP_INT_MAX
         );
 

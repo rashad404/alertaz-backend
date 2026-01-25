@@ -112,6 +112,69 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/{id}', [UserClientController::class, 'update']);
         Route::delete('/{id}', [UserClientController::class, 'destroy']);
         Route::post('/{id}/regenerate-token', [UserClientController::class, 'regenerateToken']);
+
+        // Project Data (for frontend dashboard)
+        Route::get('/{id}/service-types', [UserClientController::class, 'serviceTypes']);
+        Route::get('/{id}/customers', [UserClientController::class, 'customers']);
+        Route::get('/{id}/services/{type}/stats', [UserClientController::class, 'serviceStats']);
+        Route::get('/{id}/services/{type}', [UserClientController::class, 'services']);
+        Route::get('/{id}/campaigns', [UserClientController::class, 'campaigns']);
+        Route::get('/{id}/templates', [UserClientController::class, 'templates']);
+
+        // Dashboard Write Operations (Sanctum auth - for dashboard users)
+        // Customer actions
+        Route::post('/{id}/customers/{customerId}/send', [UserClientController::class, 'sendToCustomer']);
+        Route::delete('/{id}/customers/{customerId}', [UserClientController::class, 'deleteCustomer']);
+        Route::post('/{id}/customers/bulk-delete', [UserClientController::class, 'bulkDeleteCustomers']);
+        Route::post('/{id}/customers/bulk-send', [UserClientController::class, 'bulkSendToCustomers']);
+
+        // Service actions
+        Route::post('/{id}/services/{type}/{serviceId}/send', [UserClientController::class, 'sendToService']);
+        Route::delete('/{id}/services/{type}/{serviceId}', [UserClientController::class, 'deleteService']);
+        Route::post('/{id}/services/{type}/bulk-delete', [UserClientController::class, 'bulkDeleteServices']);
+        Route::post('/{id}/services/{type}/bulk-send', [UserClientController::class, 'bulkSendToServices']);
+
+        // Template CRUD
+        Route::post('/{id}/templates', [UserClientController::class, 'createTemplate']);
+        Route::put('/{id}/templates/{templateId}', [UserClientController::class, 'updateTemplate']);
+        Route::delete('/{id}/templates/{templateId}', [UserClientController::class, 'deleteTemplate']);
+
+        // Service Type CRUD
+        Route::get('/{id}/service-types/{key}', [UserClientController::class, 'getServiceType']);
+        Route::post('/{id}/service-types', [UserClientController::class, 'createServiceType']);
+        Route::put('/{id}/service-types/{key}', [UserClientController::class, 'updateServiceType']);
+        Route::delete('/{id}/service-types/{key}', [UserClientController::class, 'deleteServiceType']);
+
+        // Quick Send Preview
+        Route::post('/{id}/send/preview', [UserClientController::class, 'previewMessage']);
+
+        // Campaign actions
+        Route::post('/{id}/campaigns', [UserClientController::class, 'createCampaign']);
+        Route::get('/{id}/campaigns/{campaignId}', [UserClientController::class, 'getCampaign']);
+        Route::put('/{id}/campaigns/{campaignId}', [UserClientController::class, 'updateCampaign']);
+        Route::delete('/{id}/campaigns/{campaignId}', [UserClientController::class, 'deleteCampaign']);
+        Route::post('/{id}/campaigns/{campaignId}/execute', [UserClientController::class, 'executeCampaign']);
+        Route::post('/{id}/campaigns/{campaignId}/activate', [UserClientController::class, 'activateCampaign']);
+        Route::post('/{id}/campaigns/{campaignId}/pause', [UserClientController::class, 'pauseCampaign']);
+        Route::post('/{id}/campaigns/{campaignId}/cancel', [UserClientController::class, 'cancelCampaign']);
+        Route::post('/{id}/campaigns/{campaignId}/duplicate', [UserClientController::class, 'duplicateCampaign']);
+        Route::post('/{id}/campaigns/preview', [UserClientController::class, 'previewCampaign']);
+        Route::get('/{id}/campaigns/{campaignId}/preview-messages', [UserClientController::class, 'previewCampaignMessages']);
+        Route::get('/{id}/campaigns/{campaignId}/planned', [UserClientController::class, 'plannedCampaignMessages']);
+        Route::get('/{id}/campaigns/{campaignId}/messages', [UserClientController::class, 'campaignMessages']);
+        Route::post('/{id}/campaigns/{campaignId}/test-send', [UserClientController::class, 'testSendCampaign']);
+        Route::post('/{id}/campaigns/{campaignId}/test-send-custom', [UserClientController::class, 'testSendCampaignCustom']);
+        Route::post('/{id}/campaigns/{campaignId}/retry-failed', [UserClientController::class, 'retryFailedCampaign']);
+        Route::get('/{id}/segment-attributes', [UserClientController::class, 'segmentAttributes']);
+        Route::get('/{id}/senders', [UserClientController::class, 'getSenders']);
+        Route::get('/{id}/email-senders', [UserClientController::class, 'getEmailSenders']);
+
+        // Messages (Sent Messages history)
+        Route::get('/{id}/messages', [UserClientController::class, 'messages']);
+
+        // Customer details with messages
+        Route::get('/{id}/customers/{customerId}', [UserClientController::class, 'getCustomer']);
+        Route::get('/{id}/customers/{customerId}/messages', [UserClientController::class, 'customerMessages']);
     });
 
     // Balance Management Routes
@@ -221,6 +284,58 @@ Route::middleware('auth.client')->group(function () {
     Route::post('/campaigns/{id}/retry-failed', [CampaignController::class, 'retryFailed']);
 });
 
+// V1 API Routes (Clean Architecture)
+Route::prefix('v1')->middleware('auth.client')->group(function () {
+    // Service Types
+    Route::get('/service-types', [\App\Http\Controllers\Api\V1\ServiceTypeController::class, 'index']);
+    Route::post('/service-types', [\App\Http\Controllers\Api\V1\ServiceTypeController::class, 'store']);
+    Route::get('/service-types/{key}', [\App\Http\Controllers\Api\V1\ServiceTypeController::class, 'show']);
+    Route::put('/service-types/{key}', [\App\Http\Controllers\Api\V1\ServiceTypeController::class, 'update']);
+    Route::delete('/service-types/{key}', [\App\Http\Controllers\Api\V1\ServiceTypeController::class, 'destroy']);
+
+    // Customers
+    Route::get('/customers', [\App\Http\Controllers\Api\V1\CustomerController::class, 'index']);
+    Route::post('/customers', [\App\Http\Controllers\Api\V1\CustomerController::class, 'store']);
+    Route::post('/customers/sync', [\App\Http\Controllers\Api\V1\CustomerController::class, 'sync']);
+    Route::get('/customers/{id}', [\App\Http\Controllers\Api\V1\CustomerController::class, 'show']);
+    Route::put('/customers/{id}', [\App\Http\Controllers\Api\V1\CustomerController::class, 'update']);
+    Route::delete('/customers/{id}', [\App\Http\Controllers\Api\V1\CustomerController::class, 'destroy']);
+
+    // Services
+    Route::get('/services/{type}', [\App\Http\Controllers\Api\V1\ServiceController::class, 'index']);
+    Route::post('/services/{type}', [\App\Http\Controllers\Api\V1\ServiceController::class, 'store']);
+    Route::post('/services/{type}/sync', [\App\Http\Controllers\Api\V1\ServiceController::class, 'sync']);
+    Route::get('/services/{type}/{id}', [\App\Http\Controllers\Api\V1\ServiceController::class, 'show']);
+    Route::put('/services/{type}/{id}', [\App\Http\Controllers\Api\V1\ServiceController::class, 'update']);
+    Route::delete('/services/{type}/{id}', [\App\Http\Controllers\Api\V1\ServiceController::class, 'destroy']);
+    Route::get('/services/{type}/stats', [\App\Http\Controllers\Api\V1\ServiceController::class, 'stats']);
+
+    // Templates
+    Route::get('/templates', [\App\Http\Controllers\Api\V1\TemplateController::class, 'index']);
+    Route::post('/templates', [\App\Http\Controllers\Api\V1\TemplateController::class, 'store']);
+    Route::get('/templates/{id}', [\App\Http\Controllers\Api\V1\TemplateController::class, 'show']);
+    Route::put('/templates/{id}', [\App\Http\Controllers\Api\V1\TemplateController::class, 'update']);
+    Route::delete('/templates/{id}', [\App\Http\Controllers\Api\V1\TemplateController::class, 'destroy']);
+
+    // Quick Send
+    Route::post('/send/customer/{id}', [\App\Http\Controllers\Api\V1\QuickSendController::class, 'sendToCustomer']);
+    Route::post('/send/service/{type}/{id}', [\App\Http\Controllers\Api\V1\QuickSendController::class, 'sendToService']);
+    Route::post('/send/bulk', [\App\Http\Controllers\Api\V1\QuickSendController::class, 'sendBulk']);
+
+    // V1 Campaigns
+    Route::get('/campaigns', [\App\Http\Controllers\Api\V1\CampaignController::class, 'index']);
+    Route::post('/campaigns', [\App\Http\Controllers\Api\V1\CampaignController::class, 'store']);
+    Route::get('/campaigns/{id}', [\App\Http\Controllers\Api\V1\CampaignController::class, 'show']);
+    Route::put('/campaigns/{id}', [\App\Http\Controllers\Api\V1\CampaignController::class, 'update']);
+    Route::delete('/campaigns/{id}', [\App\Http\Controllers\Api\V1\CampaignController::class, 'destroy']);
+    Route::post('/campaigns/{id}/execute', [\App\Http\Controllers\Api\V1\CampaignController::class, 'execute']);
+    Route::post('/campaigns/{id}/activate', [\App\Http\Controllers\Api\V1\CampaignController::class, 'activate']);
+    Route::post('/campaigns/{id}/pause', [\App\Http\Controllers\Api\V1\CampaignController::class, 'pause']);
+    Route::post('/campaigns/{id}/cancel', [\App\Http\Controllers\Api\V1\CampaignController::class, 'cancel']);
+    Route::post('/campaigns/{id}/duplicate', [\App\Http\Controllers\Api\V1\CampaignController::class, 'duplicate']);
+    Route::post('/campaigns/preview', [\App\Http\Controllers\Api\V1\CampaignController::class, 'preview']);
+});
+
 // Cryptocurrency Routes (public)
 Route::get('/cryptos', [CryptoController::class, 'getCryptoList']);
 
@@ -266,3 +381,6 @@ Route::get('/{locale}/hello', function ($locale) {
         'status' => 'success'
     ]);
 })->where('locale', 'az|en|ru');
+
+// V1 API Routes (Clean Architecture)
+require __DIR__ . '/api_v1.php';

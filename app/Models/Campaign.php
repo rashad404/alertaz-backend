@@ -2,12 +2,21 @@
 
 namespace App\Models;
 
+use App\Traits\BelongsToClient;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Builder;
+use Carbon\Carbon;
 
 class Campaign extends Model
 {
+    use BelongsToClient;
+
+    // Target types
+    const TARGET_CUSTOMER = 'customer';
+    const TARGET_SERVICE = 'service';
+
     // Campaign types
     const TYPE_ONE_TIME = 'one_time';
     const TYPE_AUTOMATED = 'automated';
@@ -24,52 +33,63 @@ class Campaign extends Model
     const STATUS_COMPLETED = 'completed';
     const STATUS_CANCELLED = 'cancelled';
     const STATUS_FAILED = 'failed';
-    const STATUS_ACTIVE = 'active';    // For automated campaigns
-    const STATUS_PAUSED = 'paused';    // For automated campaigns
+    const STATUS_ACTIVE = 'active';
+    const STATUS_PAUSED = 'paused';
 
     protected $fillable = [
         'client_id',
         'name',
+        'target_type',
+        'service_type_id',
+        'channel',
         'sender',
         'email_sender',
         'email_display_name',
         'message_template',
-        'channel',
-        'email_subject_template',
-        'email_body_template',
+        'email_subject',
+        'email_body',
+        'filter',
         'status',
-        'type',
+        'campaign_type',
+        'scheduled_at',
         'check_interval_minutes',
         'cooldown_days',
-        'ends_at',
         'run_start_hour',
         'run_end_hour',
-        'last_run_at',
         'next_run_at',
+        'last_run_at',
+        'ends_at',
         'run_count',
-        'segment_filter',
-        'scheduled_at',
         'started_at',
         'completed_at',
         'target_count',
         'sent_count',
         'delivered_count',
         'failed_count',
+        'total_cost',
         'email_sent_count',
         'email_delivered_count',
         'email_failed_count',
-        'total_cost',
         'email_total_cost',
+        'balance_warning_sent',
+        'pause_reason',
         'created_by',
         'is_test',
-        'balance_warning_20_sent',
-        'balance_warning_10_sent',
-        'balance_warning_5_sent',
-        'pause_reason',
+    ];
+
+    protected $appends = [
+        'segment_filter',
+        'type',
+        'email_subject_template',
+        'email_body_template',
+    ];
+
+    protected $with = [
+        'serviceType:id,key,label',
     ];
 
     protected $casts = [
-        'segment_filter' => 'array',
+        'filter' => 'array',
         'scheduled_at' => 'datetime',
         'started_at' => 'datetime',
         'completed_at' => 'datetime',
@@ -77,17 +97,59 @@ class Campaign extends Model
         'last_run_at' => 'datetime',
         'next_run_at' => 'datetime',
         'is_test' => 'boolean',
+        'balance_warning_sent' => 'boolean',
         'total_cost' => 'decimal:2',
         'email_total_cost' => 'decimal:2',
-        'balance_warning_20_sent' => 'boolean',
-        'balance_warning_10_sent' => 'boolean',
-        'balance_warning_5_sent' => 'boolean',
     ];
 
-    // Relationships
-    public function client(): BelongsTo
+    // Accessors for backwards compatibility
+
+    /**
+     * Get segment_filter attribute (alias for filter column)
+     */
+    public function getSegmentFilterAttribute(): ?array
     {
-        return $this->belongsTo(Client::class);
+        return $this->filter;
+    }
+
+    /**
+     * Set segment_filter attribute (alias for filter column)
+     * Note: We set 'filter' directly and let the 'array' cast handle encoding
+     */
+    public function setSegmentFilterAttribute($value): void
+    {
+        $this->filter = $value;
+    }
+
+    /**
+     * Get email_subject_template attribute (alias for email_subject column)
+     */
+    public function getEmailSubjectTemplateAttribute(): ?string
+    {
+        return $this->email_subject;
+    }
+
+    /**
+     * Get email_body_template attribute (alias for email_body column)
+     */
+    public function getEmailBodyTemplateAttribute(): ?string
+    {
+        return $this->email_body;
+    }
+
+    /**
+     * Get type attribute (alias for campaign_type column)
+     */
+    public function getTypeAttribute(): ?string
+    {
+        return $this->campaign_type;
+    }
+
+    // Relationships
+
+    public function serviceType(): BelongsTo
+    {
+        return $this->belongsTo(ServiceType::class);
     }
 
     public function createdBy(): BelongsTo
@@ -97,68 +159,132 @@ class Campaign extends Model
 
     public function messages(): HasMany
     {
-        return $this->hasMany(SmsMessage::class);
+        return $this->hasMany(Message::class);
     }
 
-    public function contactLogs(): HasMany
+    public function cooldowns(): HasMany
     {
-        return $this->hasMany(CampaignContactLog::class);
+        return $this->hasMany(Cooldown::class);
     }
 
-    // Accessors
-    protected $appends = ['sent_today_count'];
+    // Target type helpers
 
-    public function getSentTodayCountAttribute(): int
+    public function targetsCustomers(): bool
     {
-        return SmsMessage::where('campaign_id', $this->id)
-            ->whereDate('created_at', today())
-            ->count();
+        return $this->target_type === self::TARGET_CUSTOMER;
+    }
+
+    public function targetsServices(): bool
+    {
+        return $this->target_type === self::TARGET_SERVICE;
+    }
+
+    // Channel helpers
+
+    public function requiresPhone(): bool
+    {
+        return in_array($this->channel, [self::CHANNEL_SMS, self::CHANNEL_BOTH]);
+    }
+
+    public function requiresEmail(): bool
+    {
+        return in_array($this->channel, [self::CHANNEL_EMAIL, self::CHANNEL_BOTH]);
+    }
+
+    public function isSmsOnly(): bool
+    {
+        return $this->channel === self::CHANNEL_SMS;
+    }
+
+    public function isEmailOnly(): bool
+    {
+        return $this->channel === self::CHANNEL_EMAIL;
+    }
+
+    public function usesBothChannels(): bool
+    {
+        return $this->channel === self::CHANNEL_BOTH;
+    }
+
+    // Campaign type helpers
+
+    public function isAutomated(): bool
+    {
+        return $this->campaign_type === self::TYPE_AUTOMATED;
+    }
+
+    public function isOneTime(): bool
+    {
+        return $this->campaign_type === self::TYPE_ONE_TIME;
+    }
+
+    // Status helpers
+
+    public function isDraft(): bool
+    {
+        return $this->status === self::STATUS_DRAFT;
+    }
+
+    public function isActive(): bool
+    {
+        return $this->status === self::STATUS_ACTIVE;
+    }
+
+    public function isPaused(): bool
+    {
+        return $this->status === self::STATUS_PAUSED;
+    }
+
+    public function isCompleted(): bool
+    {
+        return $this->status === self::STATUS_COMPLETED;
+    }
+
+    public function hasEnded(): bool
+    {
+        return $this->ends_at && $this->ends_at->isPast();
     }
 
     // Scopes
-    public function scopeForClient($query, int $clientId)
+
+    public function scopeDraft(Builder $query): Builder
     {
-        return $query->where('client_id', $clientId);
+        return $query->where('status', self::STATUS_DRAFT);
     }
 
-    public function scopeDraft($query)
+    public function scopeScheduled(Builder $query): Builder
     {
-        return $query->where('status', 'draft');
+        return $query->where('status', self::STATUS_SCHEDULED);
     }
 
-    public function scopeScheduled($query)
-    {
-        return $query->where('status', 'scheduled');
-    }
-
-    public function scopeCompleted($query)
-    {
-        return $query->where('status', 'completed');
-    }
-
-    public function scopeAutomated($query)
-    {
-        return $query->where('type', self::TYPE_AUTOMATED);
-    }
-
-    public function scopeOneTime($query)
-    {
-        return $query->where('type', self::TYPE_ONE_TIME);
-    }
-
-    public function scopeActive($query)
+    public function scopeActive(Builder $query): Builder
     {
         return $query->where('status', self::STATUS_ACTIVE);
     }
 
-    public function scopePaused($query)
+    public function scopePaused(Builder $query): Builder
     {
         return $query->where('status', self::STATUS_PAUSED);
     }
 
-    public function scopeDueToRun($query)
+    public function scopeCompleted(Builder $query): Builder
     {
-        return $query->where('type', self::TYPE_AUTOMATED)
+        return $query->where('status', self::STATUS_COMPLETED);
+    }
+
+    public function scopeAutomated(Builder $query): Builder
+    {
+        return $query->where('campaign_type', self::TYPE_AUTOMATED);
+    }
+
+    public function scopeOneTime(Builder $query): Builder
+    {
+        return $query->where('campaign_type', self::TYPE_ONE_TIME);
+    }
+
+    public function scopeDueToRun(Builder $query): Builder
+    {
+        return $query->where('campaign_type', self::TYPE_AUTOMATED)
             ->where('status', self::STATUS_ACTIVE)
             ->where(function ($q) {
                 $q->whereNull('ends_at')
@@ -170,16 +296,17 @@ class Campaign extends Model
             });
     }
 
-    // Helper methods
+    // Status transitions
+
     public function markAsScheduled(): void
     {
-        $this->update(['status' => 'scheduled']);
+        $this->update(['status' => self::STATUS_SCHEDULED]);
     }
 
     public function markAsSending(): void
     {
         $this->update([
-            'status' => 'sending',
+            'status' => self::STATUS_SENDING,
             'started_at' => now(),
         ]);
     }
@@ -187,90 +314,34 @@ class Campaign extends Model
     public function markAsCompleted(): void
     {
         $this->update([
-            'status' => 'completed',
+            'status' => self::STATUS_COMPLETED,
             'completed_at' => now(),
         ]);
     }
 
     public function markAsFailed(): void
     {
-        $this->update(['status' => 'failed']);
-    }
-
-    public function incrementSentCount(): void
-    {
-        $this->increment('sent_count');
-    }
-
-    public function incrementDeliveredCount(): void
-    {
-        $this->increment('delivered_count');
-    }
-
-    public function incrementFailedCount(): void
-    {
-        $this->increment('failed_count');
-    }
-
-    // Automated campaign methods
-    public function isAutomated(): bool
-    {
-        return $this->type === self::TYPE_AUTOMATED;
-    }
-
-    public function isOneTime(): bool
-    {
-        return $this->type === self::TYPE_ONE_TIME;
+        $this->update(['status' => self::STATUS_FAILED]);
     }
 
     public function activate(): void
     {
         $nextRunAt = $this->calculateNextRunTime(now());
 
-        \Log::info('Campaign activate', [
-            'campaign_id' => $this->id,
-            'run_start_hour' => $this->run_start_hour,
-            'run_end_hour' => $this->run_end_hour,
-            'current_time' => now()->toDateTimeString(),
-            'current_hour' => now()->hour,
-            'calculated_next_run_at' => $nextRunAt->toDateTimeString(),
-        ]);
-
         $this->update([
             'status' => self::STATUS_ACTIVE,
             'next_run_at' => $nextRunAt,
-            // Reset warning flags on reactivation
-            'balance_warning_20_sent' => false,
-            'balance_warning_10_sent' => false,
-            'balance_warning_5_sent' => false,
+            'balance_warning_sent' => false,
             'pause_reason' => null,
         ]);
     }
 
-    public function pause(): void
-    {
-        $this->update([
-            'status' => self::STATUS_PAUSED,
-            'next_run_at' => null,
-        ]);
-    }
-
-    public function pauseWithReason(string $reason): void
+    public function pause(?string $reason = null): void
     {
         $this->update([
             'status' => self::STATUS_PAUSED,
             'next_run_at' => null,
             'pause_reason' => $reason,
-        ]);
-    }
-
-    public function resetWarningFlags(): void
-    {
-        $this->update([
-            'balance_warning_20_sent' => false,
-            'balance_warning_10_sent' => false,
-            'balance_warning_5_sent' => false,
-            'pause_reason' => null,
         ]);
     }
 
@@ -288,175 +359,103 @@ class Campaign extends Model
         }
     }
 
-    public function hasEnded(): bool
-    {
-        return $this->ends_at && $this->ends_at->isPast();
-    }
+    // Run window helpers
 
-    /**
-     * Check if a given hour is within the run window
-     *
-     * @param int $hour 0-23
-     * @return bool
-     */
     public function isWithinRunWindow(int $hour): bool
     {
-        // If no window set, always within window
         if ($this->run_start_hour === null || $this->run_end_hour === null) {
             return true;
         }
-
         return $hour >= $this->run_start_hour && $hour < $this->run_end_hour;
     }
 
-    /**
-     * Calculate the next run time, ensuring it falls within the run window
-     *
-     * @param \Carbon\Carbon|null $baseTime Base time to calculate from (defaults to now)
-     * @return \Carbon\Carbon
-     */
-    public function calculateNextRunTime(?\Carbon\Carbon $baseTime = null): \Carbon\Carbon
+    public function calculateNextRunTime(?Carbon $baseTime = null): Carbon
     {
         $nextRun = $baseTime ?? now();
 
-        // If no window set, return as-is
         if ($this->run_start_hour === null || $this->run_end_hour === null) {
             return $nextRun;
         }
 
-        // If current time is within window, return as-is
         if ($this->isWithinRunWindow($nextRun->hour)) {
             return $nextRun;
         }
 
-        // If before start hour, schedule for today's start hour
         if ($nextRun->hour < $this->run_start_hour) {
             return $nextRun->copy()->setTime($this->run_start_hour, 0, 0);
         }
 
-        // If after end hour (or equal), schedule for tomorrow's start hour
         return $nextRun->copy()->addDay()->setTime($this->run_start_hour, 0, 0);
     }
 
-    /**
-     * Get the user who owns this campaign (via client)
-     *
-     * @return \App\Models\User|null
-     */
-    public function getOwnerUser(): ?\App\Models\User
+    // Stats helpers
+
+    public function incrementSentCount(): void
     {
-        return $this->client?->user;
+        $this->increment('sent_count');
     }
 
-    /**
-     * Check if campaign requires phone numbers (SMS channel)
-     */
-    public function requiresPhone(): bool
+    public function incrementDeliveredCount(): void
     {
-        $channel = $this->channel ?? self::CHANNEL_SMS;
-        return $channel === self::CHANNEL_SMS || $channel === self::CHANNEL_BOTH;
+        $this->increment('delivered_count');
     }
 
-    /**
-     * Check if campaign requires email addresses
-     */
-    public function requiresEmail(): bool
+    public function incrementFailedCount(): void
     {
-        $channel = $this->channel ?? self::CHANNEL_SMS;
-        return $channel === self::CHANNEL_EMAIL || $channel === self::CHANNEL_BOTH;
+        $this->increment('failed_count');
     }
 
-    /**
-     * Check if campaign is SMS-only
-     */
-    public function isSmsOnly(): bool
-    {
-        $channel = $this->channel ?? self::CHANNEL_SMS;
-        return $channel === self::CHANNEL_SMS;
-    }
-
-    /**
-     * Check if campaign is Email-only
-     */
-    public function isEmailOnly(): bool
-    {
-        return $this->channel === self::CHANNEL_EMAIL;
-    }
-
-    /**
-     * Check if campaign uses both channels
-     */
-    public function usesBothChannels(): bool
-    {
-        return $this->channel === self::CHANNEL_BOTH;
-    }
-
-    /**
-     * Get email messages relationship
-     */
-    public function emailMessages(): HasMany
-    {
-        return $this->hasMany(\App\Models\EmailMessage::class);
-    }
-
-    /**
-     * Increment email sent count
-     */
     public function incrementEmailSentCount(): void
     {
         $this->increment('email_sent_count');
     }
 
-    /**
-     * Increment email delivered count
-     */
     public function incrementEmailDeliveredCount(): void
     {
         $this->increment('email_delivered_count');
     }
 
-    /**
-     * Increment email failed count
-     */
     public function incrementEmailFailedCount(): void
     {
         $this->increment('email_failed_count');
     }
 
-    /**
-     * Estimate total cost for the campaign (including both channels)
-     *
-     * @return array
-     */
-    public function estimateTotalCost(): array
+    public function addCost(float $cost): void
     {
-        $templateRenderer = app(\App\Services\TemplateRenderer::class);
-        $costPerSms = config('app.sms_cost_per_message', 0.04);
-        $costPerEmail = config('app.email_cost_per_message', 0.01);
+        $this->increment('total_cost', $cost);
+    }
 
-        $result = [
-            'target_count' => $this->target_count,
-            'cost_per_sms' => $costPerSms,
-            'cost_per_email' => $costPerEmail,
-            'estimated_sms_cost' => 0,
-            'estimated_email_cost' => 0,
-            'estimated_total_cost' => 0,
-        ];
+    public function addEmailCost(float $cost): void
+    {
+        $this->increment('email_total_cost', $cost);
+    }
 
-        // Calculate SMS cost
-        if ($this->requiresPhone()) {
-            $segments = $templateRenderer->calculateSMSSegments($this->message_template ?? '');
-            $result['segments_per_message'] = $segments;
-            $result['estimated_sms_cost'] = round($this->target_count * $segments * $costPerSms, 2);
-        }
+    // Accessors
 
-        // Calculate Email cost
-        if ($this->requiresEmail()) {
-            $result['estimated_email_cost'] = round($this->target_count * $costPerEmail, 2);
-        }
+    public function getTotalSentAttribute(): int
+    {
+        return ($this->sent_count ?? 0) + ($this->email_sent_count ?? 0);
+    }
 
-        $result['estimated_total_cost'] = $result['estimated_sms_cost'] + $result['estimated_email_cost'];
+    public function getTotalDeliveredAttribute(): int
+    {
+        return ($this->delivered_count ?? 0) + ($this->email_delivered_count ?? 0);
+    }
 
-        return $result;
+    public function getTotalFailedAttribute(): int
+    {
+        return ($this->failed_count ?? 0) + ($this->email_failed_count ?? 0);
+    }
+
+    public function getGrandTotalCostAttribute(): float
+    {
+        return ($this->total_cost ?? 0) + ($this->email_total_cost ?? 0);
+    }
+
+    // Owner helper
+
+    public function getOwnerUser(): ?User
+    {
+        return $this->client?->user;
     }
 }
