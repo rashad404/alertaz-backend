@@ -374,9 +374,23 @@ class UserClientController extends Controller
         $perPage = $request->input('per_page', 20);
         $customers = $query->orderBy('created_at', 'desc')->paginate($perPage);
 
+        // Format customers with user-friendly dates
+        $formattedCustomers = collect($customers->items())->map(function ($customer) {
+            return [
+                'id' => $customer->id,
+                'external_id' => $customer->external_id,
+                'name' => $customer->name,
+                'phone' => $customer->phone,
+                'email' => $customer->email,
+                'data' => $customer->data,
+                'created_at' => $customer->created_at?->format('d.m.Y H:i'),
+                'updated_at' => $customer->updated_at?->format('d.m.Y H:i'),
+            ];
+        });
+
         return response()->json([
             'status' => 'success',
-            'data' => $customers->items(),
+            'data' => $formattedCustomers,
             'meta' => [
                 'total' => $customers->total(),
                 'per_page' => $customers->perPage(),
@@ -419,9 +433,30 @@ class UserClientController extends Controller
         $perPage = $request->input('per_page', 20);
         $services = $query->with('customer')->orderBy('created_at', 'desc')->paginate($perPage);
 
+        // Format services with user-friendly dates
+        $formattedServices = collect($services->items())->map(function ($service) {
+            return [
+                'id' => $service->id,
+                'external_id' => $service->external_id,
+                'name' => $service->name,
+                'expiry_at' => $service->expiry_at?->format('d.m.Y'),
+                'days_until_expiry' => $service->getDaysUntilExpiry(),
+                'status' => $service->status,
+                'data' => $service->data,
+                'customer' => $service->customer ? [
+                    'id' => $service->customer->id,
+                    'name' => $service->customer->name,
+                    'phone' => $service->customer->phone,
+                    'email' => $service->customer->email,
+                ] : null,
+                'created_at' => $service->created_at?->format('d.m.Y H:i'),
+                'updated_at' => $service->updated_at?->format('d.m.Y H:i'),
+            ];
+        });
+
         return response()->json([
             'status' => 'success',
-            'data' => $services->items(),
+            'data' => $formattedServices,
             'meta' => [
                 'total' => $services->total(),
                 'per_page' => $services->perPage(),
