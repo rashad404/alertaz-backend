@@ -430,6 +430,14 @@ class UserClientController extends Controller
             $query->where('status', $status);
         }
 
+        // Expiring within days filter
+        if ($expiringDays = $request->input('expiring_within_days')) {
+            $query->where('status', 'active')
+                ->whereNotNull('expiry_at')
+                ->whereDate('expiry_at', '>=', now())
+                ->whereDate('expiry_at', '<=', now()->addDays((int) $expiringDays));
+        }
+
         $perPage = $request->input('per_page', 20);
         $services = $query->with('customer')->orderBy('created_at', 'desc')->paginate($perPage);
 
@@ -556,7 +564,7 @@ class UserClientController extends Controller
         $stats = [
             'total' => (clone $query)->count(),
             'active' => (clone $query)->where('status', 'active')->count(),
-            'suspended' => (clone $query)->where('status', 'suspended')->count(),
+            'inactive' => (clone $query)->where('status', 'inactive')->count(),
             'expired' => (clone $query)->where('status', 'expired')->count(),
             'expiring_7_days' => (clone $query)->where('status', 'active')
                 ->whereNotNull('expiry_at')
