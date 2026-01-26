@@ -34,6 +34,7 @@ class Message extends Model
         'sender',
         'status',
         'is_test',
+        'source',
         'provider_message_id',
         'error_message',
         'error_code',

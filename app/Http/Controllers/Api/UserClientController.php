@@ -644,7 +644,8 @@ class UserClientController extends Controller
             $customer->phone,
             $customer->email,
             $customerId,
-            null
+            null,
+            'customer'
         );
 
         return response()->json(['status' => 'success', 'data' => $result]);
@@ -794,7 +795,8 @@ class UserClientController extends Controller
             $phone,
             $email,
             $service->customer_id,
-            $serviceId
+            $serviceId,
+            'service'
         );
 
         return response()->json(['status' => 'success', 'data' => $result]);
@@ -1766,7 +1768,8 @@ class UserClientController extends Controller
         ?string $phone,
         ?string $email,
         ?int $customerId,
-        ?int $serviceId
+        ?int $serviceId,
+        string $source = 'api'
     ): array {
         $messageSender = app(MessageSender::class);
         $templateRenderer = app(TemplateRenderer::class);
@@ -1797,6 +1800,7 @@ class UserClientController extends Controller
                     'sender' => $sender,
                     'status' => $smsResult['success'] ? Message::STATUS_SENT : Message::STATUS_FAILED,
                     'is_test' => $smsResult['test_mode'] ?? false,
+                    'source' => $source,
                     'provider_message_id' => $smsResult['message_id'] ?? null,
                     'error_message' => $smsResult['error'] ?? null,
                     'cost' => $smsResult['cost'] ?? 0,
@@ -1839,6 +1843,7 @@ class UserClientController extends Controller
                     'sender' => $emailSender,
                     'status' => $emailResult['success'] ? Message::STATUS_SENT : Message::STATUS_FAILED,
                     'is_test' => $emailResult['test_mode'] ?? false,
+                    'source' => $source,
                     'provider_message_id' => $emailResult['message_id'] ?? null,
                     'error_message' => $emailResult['error'] ?? null,
                     'cost' => $emailResult['cost'] ?? 0,

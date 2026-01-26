@@ -205,6 +205,7 @@ class CampaignExecutor
             'sender' => $channel === 'sms' ? $campaign->sender : $campaign->email_sender,
             'status' => $result['success'] ? Message::STATUS_SENT : Message::STATUS_FAILED,
             'is_test' => $campaign->is_test ?? false,
+            'source' => 'campaign',
             'provider_message_id' => $result['message_id'] ?? null,
             'error_message' => $result['error'] ?? null,
             'cost' => $result['cost'] ?? 0,
