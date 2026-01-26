@@ -1796,6 +1796,7 @@ class UserClientController extends Controller
                     'content' => $messageText,
                     'sender' => $sender,
                     'status' => $smsResult['success'] ? Message::STATUS_SENT : Message::STATUS_FAILED,
+                    'is_test' => $smsResult['test_mode'] ?? false,
                     'provider_message_id' => $smsResult['message_id'] ?? null,
                     'error_message' => $smsResult['error'] ?? null,
                     'cost' => $smsResult['cost'] ?? 0,
@@ -1835,8 +1836,9 @@ class UserClientController extends Controller
                     'recipient' => $email,
                     'subject' => $subject,
                     'content' => $body,
-                    'sender' => $emailSender, // Now always has a value
+                    'sender' => $emailSender,
                     'status' => $emailResult['success'] ? Message::STATUS_SENT : Message::STATUS_FAILED,
+                    'is_test' => $emailResult['test_mode'] ?? false,
                     'provider_message_id' => $emailResult['message_id'] ?? null,
                     'error_message' => $emailResult['error'] ?? null,
                     'cost' => $emailResult['cost'] ?? 0,
@@ -2172,6 +2174,21 @@ class UserClientController extends Controller
                         'sent_at' => now(),
                     ]);
 
+                    // Also create in unified messages table
+                    \App\Models\Message::create([
+                        'client_id' => $campaign->client_id,
+                        'campaign_id' => $campaign->id,
+                        'channel' => 'sms',
+                        'recipient' => $contact->phone,
+                        'content' => $message,
+                        'sender' => $campaign->sender,
+                        'status' => 'sent',
+                        'is_test' => true,
+                        'cost' => $cost,
+                        'segments' => $segments,
+                        'sent_at' => now(),
+                    ]);
+
                     \App\Models\CampaignContactLog::recordSend($campaign->id, $contact->id);
                 } else {
                     $status = 'failed';
@@ -2335,6 +2352,21 @@ class UserClientController extends Controller
                     'provider_transaction_id' => $result['transaction_id'] ?? null,
                     'sent_at' => now(),
                 ]);
+
+                // Also create in unified messages table
+                \App\Models\Message::create([
+                    'client_id' => $campaign->client_id,
+                    'campaign_id' => $campaign->id,
+                    'channel' => 'sms',
+                    'recipient' => $phone,
+                    'content' => $message,
+                    'sender' => $campaign->sender,
+                    'status' => 'sent',
+                    'is_test' => true,
+                    'cost' => $cost,
+                    'segments' => $segments,
+                    'sent_at' => now(),
+                ]);
             } else {
                 $status = 'failed';
                 $error = $result['error_message'] ?? 'Unknown error';
@@ -2393,6 +2425,22 @@ class UserClientController extends Controller
                 'is_test' => true,
                 'sent_at' => now(),
             ]);
+
+            // Also create in unified messages table
+            \App\Models\Message::create([
+                'client_id' => $campaign->client_id,
+                'campaign_id' => $campaign->id,
+                'channel' => 'email',
+                'recipient' => $email,
+                'subject' => $subject,
+                'content' => $bodyText,
+                'sender' => $emailSenderDetails['email'],
+                'status' => 'sent',
+                'is_test' => true,
+                'cost' => 0,
+                'segments' => 1,
+                'sent_at' => now(),
+            ]);
         } else {
             try {
                 $executionEngine = app(\App\Services\CampaignExecutionEngine::class);
@@ -2415,6 +2463,22 @@ class UserClientController extends Controller
                 if ($result['success']) {
                     $status = 'sent';
                     $error = null;
+
+                    // Also create in unified messages table (test send)
+                    \App\Models\Message::create([
+                        'client_id' => $campaign->client_id,
+                        'campaign_id' => $campaign->id,
+                        'channel' => 'email',
+                        'recipient' => $email,
+                        'subject' => $subject,
+                        'content' => $bodyText,
+                        'sender' => $emailSenderDetails['email'],
+                        'status' => 'sent',
+                        'is_test' => true,
+                        'cost' => $cost,
+                        'segments' => 1,
+                        'sent_at' => now(),
+                    ]);
                 } else {
                     $status = 'failed';
                     $error = $result['error'] ?? 'Unknown error';

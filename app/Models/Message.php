@@ -33,6 +33,7 @@ class Message extends Model
         'subject',
         'sender',
         'status',
+        'is_test',
         'provider_message_id',
         'error_message',
         'error_code',
@@ -47,6 +48,7 @@ class Message extends Model
     protected $casts = [
         'cost' => 'decimal:4',
         'segments' => 'integer',
+        'is_test' => 'boolean',
         'sent_at' => 'datetime',
         'delivered_at' => 'datetime',
         'opened_at' => 'datetime',
