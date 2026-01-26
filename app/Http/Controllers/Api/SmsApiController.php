@@ -32,6 +32,7 @@ class SmsApiController extends Controller
             'phone' => ['required', 'string', 'regex:/^994[0-9]{9}$/'],
             'message' => ['required', 'string', 'max:1000'],
             'sender' => ['nullable', 'string', 'max:50'],
+            'is_test' => ['nullable', 'boolean'],
         ]);
 
         if ($validator->fails()) {
@@ -75,7 +76,10 @@ class SmsApiController extends Controller
             message: $message,
             sender: $senderToUse,
             source: 'api',
-            clientId: $clientId
+            clientId: $clientId,
+            campaignId: null,
+            customerId: null,
+            forceTest: $request->boolean('is_test')
         );
 
         if (!$result['success']) {

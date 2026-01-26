@@ -52,11 +52,12 @@ class SmsService
         string $source = 'api',
         ?int $clientId = null,
         ?int $campaignId = null,
-        ?int $customerId = null
+        ?int $customerId = null,
+        bool $forceTest = false
     ): array {
         // Calculate cost
         $cost = $this->calculateCost($message);
-        $isTest = $this->isTestMode();
+        $isTest = $forceTest || $this->isTestMode();
 
         // In test mode, skip billing and actual sending
         if ($isTest) {

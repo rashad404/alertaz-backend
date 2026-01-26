@@ -54,10 +54,11 @@ class EmailService
         string $source = 'api',
         ?int $clientId = null,
         ?int $campaignId = null,
-        ?int $customerId = null
+        ?int $customerId = null,
+        bool $forceTest = false
     ): array {
         $cost = $this->costPerEmail;
-        $isTest = $this->isTestMode();
+        $isTest = $forceTest || $this->isTestMode();
 
         // Use defaults if not provided
         $fromEmail = $fromEmail ?? config('mail.from.address', 'noreply@alert.az');

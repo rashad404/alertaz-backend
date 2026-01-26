@@ -34,6 +34,7 @@ class EmailApiController extends Controller
             'body_text' => ['required_without:body_html', 'nullable', 'string', 'max:50000'],
             'from' => ['nullable', 'email', 'max:255'],
             'from_name' => ['nullable', 'string', 'max:255'],
+            'is_test' => ['nullable', 'boolean'],
         ]);
 
         if ($validator->fails()) {
@@ -76,7 +77,10 @@ class EmailApiController extends Controller
             fromEmail: $request->input('from'),
             fromName: $request->input('from_name'),
             source: 'api',
-            clientId: $clientId
+            clientId: $clientId,
+            campaignId: null,
+            customerId: null,
+            forceTest: $request->boolean('is_test')
         );
 
         if (!$result['success']) {
