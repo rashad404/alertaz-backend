@@ -167,11 +167,19 @@ class User extends Authenticatable
     }
 
     /**
-     * Get the user's SMS messages.
+     * Get the user's clients.
      */
-    public function smsMessages()
+    public function clients()
     {
-        return $this->hasMany(SmsMessage::class);
+        return $this->hasMany(Client::class);
+    }
+
+    /**
+     * Get the user's messages through clients.
+     */
+    public function messages()
+    {
+        return $this->hasManyThrough(Message::class, Client::class);
     }
 
     /**

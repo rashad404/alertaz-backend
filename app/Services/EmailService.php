@@ -3,7 +3,7 @@
 namespace App\Services;
 
 use App\Models\User;
-use App\Models\EmailMessage;
+use App\Models\Message;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Log;
 
@@ -39,7 +39,7 @@ class EmailService
      * @param string $source - 'api', 'verification', 'notification', 'campaign'
      * @param int|null $clientId - Optional client ID for API sources
      * @param int|null $campaignId - Optional campaign ID for campaign sources
-     * @param int|null $contactId - Optional contact ID for campaign sources
+     * @param int|null $customerId - Optional customer ID for campaign sources
      * @return array
      */
     public function send(
@@ -54,7 +54,7 @@ class EmailService
         string $source = 'api',
         ?int $clientId = null,
         ?int $campaignId = null,
-        ?int $contactId = null
+        ?int $customerId = null
     ): array {
         $cost = $this->costPerEmail;
         $isTest = $this->isTestMode();
@@ -75,18 +75,15 @@ class EmailService
             $emailMessage = $this->recordMessage(
                 user: $user,
                 toEmail: $toEmail,
-                toName: $toName,
-                fromEmail: $fromEmail,
-                fromName: $fromName,
                 subject: $subject,
                 bodyHtml: $bodyHtml,
-                bodyText: $bodyText,
+                sender: $fromName ?? 'Alert.az',
                 source: $source,
                 cost: 0, // No cost in test mode
                 isTest: true,
                 clientId: $clientId,
                 campaignId: $campaignId,
-                contactId: $contactId
+                customerId: $customerId
             );
 
             $emailMessage->markAsSent('test-' . uniqid());
@@ -127,18 +124,15 @@ class EmailService
         $emailMessage = $this->recordMessage(
             user: $user,
             toEmail: $toEmail,
-            toName: $toName,
-            fromEmail: $fromEmail,
-            fromName: $fromName,
             subject: $subject,
             bodyHtml: $bodyHtml,
-            bodyText: $bodyText,
+            sender: $fromName ?? 'Alert.az',
             source: $source,
             cost: $cost,
             isTest: false,
             clientId: $clientId,
             campaignId: $campaignId,
-            contactId: $contactId
+            customerId: $customerId
         );
 
         try {
@@ -185,9 +179,8 @@ class EmailService
         } catch (\Exception $e) {
             // Send failed - mark message as failed (no billing)
             $emailMessage->markAsFailed(
-                errorMessage: $e->getMessage(),
-                errorCode: $e->getCode() ? (string) $e->getCode() : null,
-                failureReason: 'send_error'
+                $e->getMessage(),
+                $e->getCode() ?: null
             );
 
             Log::error("📧 Email send failed", [
@@ -273,36 +266,28 @@ class EmailService
     private function recordMessage(
         User $user,
         string $toEmail,
-        ?string $toName,
-        string $fromEmail,
-        string $fromName,
         string $subject,
         string $bodyHtml,
-        ?string $bodyText,
+        string $sender,
         string $source,
         float $cost,
         bool $isTest,
         ?int $clientId = null,
         ?int $campaignId = null,
-        ?int $contactId = null
-    ): EmailMessage {
-        return EmailMessage::create([
-            'user_id' => $user->id,
+        ?int $customerId = null
+    ): Message {
+        return Message::createEmail([
             'client_id' => $clientId,
             'campaign_id' => $campaignId,
-            'contact_id' => $contactId,
-            'to_email' => $toEmail,
-            'to_name' => $toName,
-            'from_email' => $fromEmail,
-            'from_name' => $fromName,
+            'customer_id' => $customerId,
+            'recipient' => $toEmail,
             'subject' => $subject,
-            'body_html' => $bodyHtml,
-            'body_text' => $bodyText,
+            'content' => $bodyHtml,
+            'sender' => $sender,
             'source' => $source,
             'cost' => $cost,
             'is_test' => $isTest,
-            'status' => 'pending',
-            'ip_address' => request()->ip(),
+            'status' => Message::STATUS_PENDING,
         ]);
     }
 

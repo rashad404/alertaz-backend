@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\EmailMessage;
+use App\Models\Message;
 use App\Services\EmailService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -56,6 +56,16 @@ class EmailApiController extends Controller
                 . '</div>';
         }
 
+        // Get client from middleware (if authenticated via client token)
+        $client = $request->attributes->get('client');
+        $clientId = $client ? $client->id : null;
+
+        // If no client from token, try to get user's default client
+        if (!$clientId) {
+            $defaultClient = $user->clients()->first();
+            $clientId = $defaultClient ? $defaultClient->id : null;
+        }
+
         $result = $this->emailService->send(
             user: $user,
             toEmail: $request->input('to'),
@@ -65,7 +75,8 @@ class EmailApiController extends Controller
             toName: $request->input('to_name'),
             fromEmail: $request->input('from'),
             fromName: $request->input('from_name'),
-            source: 'api'
+            source: 'api',
+            clientId: $clientId
         );
 
         if (!$result['success']) {
@@ -133,7 +144,7 @@ class EmailApiController extends Controller
         $user = $request->user();
         $perPage = $request->input('per_page', 20);
 
-        $query = EmailMessage::forUser($user->id);
+        $query = Message::email()->forUser($user->id);
 
         // Filter by source
         if ($source = $request->input('source')) {
@@ -147,7 +158,7 @@ class EmailApiController extends Controller
 
         // Filter by recipient email (partial match)
         if ($email = $request->input('email')) {
-            $query->where('to_email', 'like', "%{$email}%");
+            $query->where('recipient', 'like', "%{$email}%");
         }
 
         // Filter by status
@@ -167,12 +178,6 @@ class EmailApiController extends Controller
             ->with(['client:id,name'])
             ->recent()
             ->paginate($perPage);
-
-        // Hide body content in list view for performance
-        $messages->getCollection()->transform(function ($message) {
-            $message->makeHidden(['body_html', 'body_text']);
-            return $message;
-        });
 
         return response()->json([
             'status' => 'success',
@@ -199,8 +204,9 @@ class EmailApiController extends Controller
     {
         $user = $request->user();
 
-        $message = EmailMessage::where('id', $id)
-            ->where('user_id', $user->id)
+        $message = Message::email()
+            ->forUser($user->id)
+            ->where('id', $id)
             ->first();
 
         if (!$message) {

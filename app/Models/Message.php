@@ -129,6 +129,24 @@ class Message extends Model
     }
 
     /**
+     * Scope for messages belonging to a user (through client relationship)
+     */
+    public function scopeForUser(Builder $query, int $userId): Builder
+    {
+        return $query->whereHas('client', function ($q) use ($userId) {
+            $q->where('user_id', $userId);
+        });
+    }
+
+    /**
+     * Scope for recent messages (ordered by created_at desc)
+     */
+    public function scopeRecent(Builder $query): Builder
+    {
+        return $query->orderBy('created_at', 'desc');
+    }
+
+    /**
      * Mark message as sent
      */
     public function markAsSent(?string $providerMessageId = null): void

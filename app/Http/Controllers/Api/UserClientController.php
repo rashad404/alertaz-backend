@@ -42,7 +42,7 @@ class UserClientController extends Controller
                     'created_at' => $client->created_at->toIso8601String(),
                     'stats' => [
                         'customers_count' => $client->customers()->count(),
-                        'services_count' => $client->services()->count(),
+                        'service_types_count' => $client->serviceTypes()->count(),
                         'campaigns_count' => $client->campaigns()->count(),
                         'active_campaigns' => $client->campaigns()->whereIn('status', ['active', 'sending'])->count(),
                     ],

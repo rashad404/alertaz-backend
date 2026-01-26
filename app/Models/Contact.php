@@ -90,6 +90,27 @@ class Contact extends Model
     }
 
     /**
+     * Get all available variables for templating
+     */
+    public function getTemplateVariables(): array
+    {
+        $variables = [
+            'contact_id' => $this->id,
+            'phone' => $this->phone ?? '',
+        ];
+
+        // Add all attribute fields
+        $attrs = $this->getAttributeValue('attributes');
+        if (is_array($attrs)) {
+            foreach ($attrs as $key => $value) {
+                $variables[$key] = $value ?? '';
+            }
+        }
+
+        return $variables;
+    }
+
+    /**
      * Create a temporary sample contact instance (not saved to DB)
      * Used for test sends when custom email/phone is not in contact list
      *

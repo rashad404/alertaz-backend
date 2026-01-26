@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\SmsMessage;
+use App\Models\Message;
 use App\Models\UserAllowedSender;
 use App\Services\SmsService;
 use Illuminate\Http\JsonResponse;
@@ -58,13 +58,24 @@ class SmsApiController extends Controller
             ], 403);
         }
 
+        // Get client from middleware (if authenticated via client token)
+        $client = $request->attributes->get('client');
+        $clientId = $client ? $client->id : null;
+
+        // If no client from token, try to get user's default client
+        if (!$clientId) {
+            $defaultClient = $user->clients()->first();
+            $clientId = $defaultClient ? $defaultClient->id : null;
+        }
+
         // Send via SmsService (handles billing, balance check, and message recording)
         $result = $this->smsService->send(
             user: $user,
             phone: $phone,
             message: $message,
             sender: $senderToUse,
-            source: 'api'
+            source: 'api',
+            clientId: $clientId
         );
 
         if (!$result['success']) {
@@ -132,7 +143,7 @@ class SmsApiController extends Controller
         $user = $request->user();
         $perPage = $request->input('per_page', 20);
 
-        $query = SmsMessage::forUser($user->id);
+        $query = Message::sms()->forUser($user->id);
 
         // Filter by source (api/campaign)
         if ($source = $request->input('source')) {
@@ -151,7 +162,7 @@ class SmsApiController extends Controller
 
         // Filter by phone (partial match)
         if ($phone = $request->input('phone')) {
-            $query->where('phone', 'like', "%{$phone}%");
+            $query->where('recipient', 'like', "%{$phone}%");
         }
 
         // Filter by status
@@ -197,8 +208,9 @@ class SmsApiController extends Controller
     {
         $user = $request->user();
 
-        $message = SmsMessage::where('id', $id)
-            ->where('user_id', $user->id)
+        $message = Message::sms()
+            ->forUser($user->id)
+            ->where('id', $id)
             ->first();
 
         if (!$message) {
@@ -229,7 +241,7 @@ class SmsApiController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Invalid webhook data'], 400);
         }
 
-        $message = SmsMessage::where('provider_transaction_id', $transactionId)->first();
+        $message = Message::sms()->where('provider_message_id', $transactionId)->first();
 
         if (!$message) {
             Log::warning('Webhook received for unknown transaction', [
@@ -242,13 +254,13 @@ class SmsApiController extends Controller
         // Update delivery status based on status code
         if ($statusCode === 101) {
             // Delivered
-            $message->markAsDelivered($statusCode);
+            $message->markAsDelivered();
         } elseif (in_array($statusCode, [102, 103, 104, 105, 106, 109])) {
             // Failed statuses
             $message->markAsFailed('Delivery failed', $statusCode);
         } else {
             // Other statuses (in queue, sent, unknown, etc.)
-            $message->update(['delivery_status_code' => $statusCode]);
+            $message->update(['error_code' => $statusCode]);
         }
 
         return response()->json(['status' => 'ok'], 200);

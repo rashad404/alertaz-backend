@@ -3,7 +3,7 @@
 namespace App\Services;
 
 use App\Models\User;
-use App\Models\SmsMessage;
+use App\Models\Message;
 use Illuminate\Support\Facades\Log;
 
 class SmsService
@@ -41,7 +41,7 @@ class SmsService
      * @param string $source - 'verification', 'alert', 'api', 'campaign'
      * @param int|null $clientId - Optional client ID for API/Campaign sources
      * @param int|null $campaignId - Optional campaign ID
-     * @param int|null $contactId - Optional contact ID
+     * @param int|null $customerId - Optional customer ID
      * @return array ['success' => bool, 'error' => string|null, 'error_code' => string|null, 'transaction_id' => string|null, 'cost' => float|null]
      */
     public function send(
@@ -52,7 +52,7 @@ class SmsService
         string $source = 'api',
         ?int $clientId = null,
         ?int $campaignId = null,
-        ?int $contactId = null
+        ?int $customerId = null
     ): array {
         // Calculate cost
         $cost = $this->calculateCost($message);
@@ -78,7 +78,7 @@ class SmsService
                 isTest: true,
                 clientId: $clientId,
                 campaignId: $campaignId,
-                contactId: $contactId
+                customerId: $customerId
             );
 
             $smsMessage->markAsSent('test-' . uniqid());
@@ -86,7 +86,7 @@ class SmsService
             return [
                 'success' => true,
                 'message' => 'SMS sent successfully (test mode)',
-                'transaction_id' => $smsMessage->provider_transaction_id,
+                'transaction_id' => $smsMessage->provider_message_id,
                 'cost' => 0,
                 'is_test' => true,
                 'debug' => [
@@ -126,7 +126,7 @@ class SmsService
             isTest: false,
             clientId: $clientId,
             campaignId: $campaignId,
-            contactId: $contactId
+            customerId: $customerId
         );
 
         // Send via QuickSMS
@@ -159,9 +159,8 @@ class SmsService
 
         // Send failed - mark message as failed (no billing)
         $smsMessage->markAsFailed(
-            errorMessage: $result['error_message'] ?? 'Unknown error',
-            errorCode: $result['error_code'] ?? null,
-            failureReason: $this->quickSmsService->categorizeError($result['error_code'] ?? -500)
+            $result['error_message'] ?? 'Unknown error',
+            $result['error_code'] ?? null
         );
 
         Log::error("📱 SMS send failed", [
@@ -264,21 +263,20 @@ class SmsService
         bool $isTest,
         ?int $clientId = null,
         ?int $campaignId = null,
-        ?int $contactId = null
-    ): SmsMessage {
-        return SmsMessage::create([
-            'user_id' => $user->id,
+        ?int $customerId = null
+    ): Message {
+        return Message::createSms([
             'client_id' => $clientId,
             'campaign_id' => $campaignId,
-            'contact_id' => $contactId,
-            'phone' => $phone,
-            'message' => $message,
+            'customer_id' => $customerId,
+            'recipient' => $phone,
+            'content' => $message,
             'sender' => $sender,
             'source' => $source,
             'cost' => $cost,
             'is_test' => $isTest,
-            'status' => 'pending',
-            'ip_address' => request()->ip(),
+            'status' => Message::STATUS_PENDING,
+            'segments' => $this->calculateSegments($message),
         ]);
     }
 
@@ -333,7 +331,7 @@ class SmsService
                 source: $source,
                 clientId: $clientId,
                 campaignId: $campaignId,
-                contactId: $recipient['contact_id'] ?? null
+                customerId: $recipient['customer_id'] ?? null
             );
 
             $results[] = [

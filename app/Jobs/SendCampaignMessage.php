@@ -6,8 +6,7 @@ use App\Exceptions\TemplateRenderException;
 use App\Models\Campaign;
 use App\Models\CampaignContactLog;
 use App\Models\Contact;
-use App\Models\EmailMessage;
-use App\Models\SmsMessage;
+use App\Models\Message;
 use App\Models\User;
 use App\Models\UserEmailSender;
 use App\Services\EmailService;
@@ -203,20 +202,20 @@ class SendCampaignMessage implements ShouldQueue
         }
 
         // Create SMS message record
-        SmsMessage::create([
-            'user_id' => $this->campaign->created_by,
-            'source' => 'campaign',
+        Message::createSms([
             'client_id' => $this->campaign->client_id,
             'campaign_id' => $this->campaign->id,
-            'contact_id' => $this->contact->id,
-            'phone' => $this->contact->phone,
-            'message' => $message,
+            'customer_id' => null, // Contact-based campaign, not customer-based
+            'recipient' => $this->contact->phone,
+            'content' => $message,
             'sender' => $this->campaign->sender,
+            'source' => 'campaign',
             'cost' => $cost,
             'status' => $messageStatus,
             'is_test' => $mockMode,
-            'provider_transaction_id' => $externalId,
+            'provider_message_id' => $externalId,
             'error_message' => $errorMessage,
+            'error_code' => $errorCode,
             'sent_at' => $messageStatus === 'sent' ? now() : null,
             'delivered_at' => $deliveryStatus === 'delivered' ? now() : null,
         ]);
@@ -292,20 +291,17 @@ class SendCampaignMessage implements ShouldQueue
 
         if ($mockMode) {
             // Mock mode: create record without actually sending
-            EmailMessage::create([
-                'user_id' => $this->campaign->created_by,
-                'source' => 'campaign',
+            Message::createEmail([
                 'client_id' => $this->campaign->client_id,
                 'campaign_id' => $this->campaign->id,
-                'contact_id' => $this->contact->id,
-                'to_email' => $email,
+                'customer_id' => null, // Contact-based campaign, not customer-based
+                'recipient' => $email,
                 'subject' => $subject,
-                'body_html' => $bodyHtml,
-                'body_text' => $bodyText,
-                'from_email' => $emailSenderEmail,
-                'from_name' => $emailSenderName,
+                'content' => $bodyHtml,
+                'sender' => $displayName,
+                'source' => 'campaign',
                 'cost' => 0,
-                'status' => 'sent',
+                'status' => Message::STATUS_SENT,
                 'is_test' => true,
                 'sent_at' => now(),
                 'delivered_at' => now(),
@@ -406,19 +402,20 @@ HTML;
         $segments = $templateRenderer->calculateSMSSegments($message);
         $cost = $segments * config('app.sms_cost_per_message', 0.04);
 
-        SmsMessage::create([
-            'user_id' => $this->campaign->created_by,
-            'source' => 'campaign',
+        Message::createSms([
             'client_id' => $this->campaign->client_id,
             'campaign_id' => $this->campaign->id,
-            'contact_id' => $this->contact->id,
-            'phone' => $this->contact->phone,
-            'message' => $message,
+            'customer_id' => null,
+            'recipient' => $this->contact->phone,
+            'content' => $message,
             'sender' => $this->campaign->sender,
+            'source' => 'campaign',
             'cost' => $cost,
-            'status' => 'failed',
+            'segments' => $segments,
+            'status' => Message::STATUS_FAILED,
             'is_test' => $mockMode,
             'error_message' => $errorMessage,
+            'error_code' => $errorCode,
         ]);
 
         $this->campaign->increment('failed_count');

@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Exceptions\TemplateRenderException;
+
 class TemplateRenderer
 {
     /**
@@ -16,6 +18,31 @@ class TemplateRenderer
                 $value = json_encode($value);
             }
             $message = str_replace("{{" . $key . "}}", (string) $value, $message);
+        }
+
+        return $message;
+    }
+
+    /**
+     * Render template strictly - throws exception if variables remain unresolved
+     *
+     * @param string $template The template string with {{variable}} placeholders
+     * @param object $target Object with getTemplateVariables() method (Contact, Customer, etc.)
+     * @return string Rendered message
+     * @throws TemplateRenderException If any variables are unresolved
+     */
+    public function renderStrict(string $template, object $target): string
+    {
+        $variables = $target->getTemplateVariables();
+        $message = $this->render($template, $variables);
+
+        // Check for unresolved variables
+        preg_match_all('/\{\{(\w+)\}\}/', $message, $matches);
+        if (!empty($matches[1])) {
+            throw new TemplateRenderException(
+                'Unresolved variables: ' . implode(', ', $matches[1]),
+                $matches[1]
+            );
         }
 
         return $message;
