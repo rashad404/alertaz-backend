@@ -248,7 +248,7 @@ HTML;
 
             // Calculate cost
             $segments = $this->templateRenderer->calculateSMSSegments($message);
-            $cost = $segments * config('app.sms_cost_per_message', 0.04);
+            $cost = $segments * config('app.sms_cost_per_message', 0.05);
 
             // Check user balance
             if (!$mockMode && $user->balance < $cost) {

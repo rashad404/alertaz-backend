@@ -2114,7 +2114,7 @@ class UserClientController extends Controller
             return response()->json(['status' => 'error', 'message' => 'No contacts match the segment filter'], 422);
         }
 
-        $costPerSms = config('app.sms_cost_per_message', 0.04);
+        $costPerSms = config('app.sms_cost_per_message', 0.05);
         $globalTestMode = config('services.quicksms.test_mode', false);
 
         $results = [];
@@ -2319,7 +2319,7 @@ class UserClientController extends Controller
     private function sendCampaignTestSms(Campaign $campaign, $user, $sampleContact, string $phone, $templateRenderer): array
     {
         $smsService = app(\App\Services\QuickSmsService::class);
-        $costPerSms = config('app.sms_cost_per_message', 0.04);
+        $costPerSms = config('app.sms_cost_per_message', 0.05);
         $globalTestMode = config('services.quicksms.test_mode', false);
 
         $message = $templateRenderer->renderWithFallback($campaign->message_template ?? '', $sampleContact);

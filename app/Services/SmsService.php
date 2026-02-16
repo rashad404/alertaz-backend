@@ -19,7 +19,7 @@ class SmsService
     public function __construct(QuickSmsService $quickSmsService)
     {
         $this->quickSmsService = $quickSmsService;
-        $this->costPerMessage = (float) config('services.sms.cost_per_message', 0.04);
+        $this->costPerMessage = (float) config('services.sms.cost_per_message', 0.05);
         $this->charsPerSegment = (int) config('services.sms.chars_per_segment', 153);
     }
 

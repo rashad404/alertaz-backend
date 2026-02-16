@@ -88,7 +88,7 @@ class TemplateRenderer
     /**
      * Estimate cost
      */
-    public function estimateCost(string $template, int $count, float $pricePerSms = 0.04): array
+    public function estimateCost(string $template, int $count, float $pricePerSms = 0.05): array
     {
         $segments = $this->calculateSMSSegments($template);
         return [

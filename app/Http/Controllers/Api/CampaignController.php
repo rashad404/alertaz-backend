@@ -1221,7 +1221,7 @@ class CampaignController extends Controller
 
         $templateRenderer = app(\App\Services\TemplateRenderer::class);
         $smsService = app(\App\Services\QuickSmsService::class);
-        $costPerSms = config('app.sms_cost_per_message', 0.04);
+        $costPerSms = config('app.sms_cost_per_message', 0.05);
 
         // Check if test mode
         $globalTestMode = config('services.quicksms.test_mode', false);
@@ -1492,7 +1492,7 @@ class CampaignController extends Controller
     protected function sendTestSms(Campaign $campaign, $user, $sampleContact, string $phone, $templateRenderer): array
     {
         $smsService = app(\App\Services\QuickSmsService::class);
-        $costPerSms = config('app.sms_cost_per_message', 0.04);
+        $costPerSms = config('app.sms_cost_per_message', 0.05);
         $globalTestMode = config('services.quicksms.test_mode', false);
 
         // Render message with fallback for missing variables (for test sends)

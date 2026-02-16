@@ -131,7 +131,7 @@ class SmsApiController extends Controller
             'data' => [
                 'balance' => number_format($user->balance, 2, '.', ''),
                 'total_spent' => number_format($user->total_spent, 2, '.', ''),
-                'cost_per_sms' => number_format(config('services.sms.cost_per_message', 0.04), 2, '.', ''),
+                'cost_per_sms' => number_format(config('services.sms.cost_per_message', 0.05), 2, '.', ''),
             ],
         ], 200);
     }

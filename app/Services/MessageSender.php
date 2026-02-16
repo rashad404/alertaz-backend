@@ -32,7 +32,7 @@ class MessageSender
             return [
                 'success' => true,
                 'message_id' => 'test_' . uniqid(),
-                'cost' => config('services.sms.cost_per_message', 0.04),
+                'cost' => config('services.sms.cost_per_message', 0.05),
                 'test_mode' => true,
             ];
         }
@@ -44,7 +44,7 @@ class MessageSender
             return [
                 'success' => true,
                 'message_id' => $result['transaction_id'] ?? null,
-                'cost' => config('services.sms.cost_per_message', 0.04),
+                'cost' => config('services.sms.cost_per_message', 0.05),
             ];
         }
 

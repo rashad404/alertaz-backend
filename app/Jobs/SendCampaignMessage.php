@@ -138,7 +138,7 @@ class SendCampaignMessage implements ShouldQueue
 
         // Calculate cost
         $segments = $templateRenderer->calculateSMSSegments($message);
-        $cost = $segments * config('app.sms_cost_per_message', 0.04);
+        $cost = $segments * config('app.sms_cost_per_message', 0.05);
 
         // Check balance (skip in mock mode)
         if (!$mockMode && $user->balance < $cost) {
@@ -400,7 +400,7 @@ HTML;
         ?int $errorCode
     ): void {
         $segments = $templateRenderer->calculateSMSSegments($message);
-        $cost = $segments * config('app.sms_cost_per_message', 0.04);
+        $cost = $segments * config('app.sms_cost_per_message', 0.05);
 
         Message::createSms([
             'client_id' => $this->campaign->client_id,
