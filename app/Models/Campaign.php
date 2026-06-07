@@ -352,6 +352,7 @@ class Campaign extends Model
             $nextRun = $this->calculateNextRunTime($baseNextRun);
 
             $this->update([
+                'status' => self::STATUS_ACTIVE,
                 'last_run_at' => now(),
                 'next_run_at' => $nextRun,
                 'run_count' => $this->run_count + 1,

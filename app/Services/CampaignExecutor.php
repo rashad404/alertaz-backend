@@ -42,7 +42,9 @@ class CampaignExecutor
             }
 
             return $result;
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
+            // Catch Throwable (not just Exception) so a TypeError/Error also resets
+            // the campaign instead of leaving it stuck in the "sending" state.
             Log::error('Campaign execution failed', [
                 'campaign_id' => $campaign->id,
                 'error' => $e->getMessage(),
