@@ -691,6 +691,25 @@ HTML;
     }
 
     /**
+     * Build the recipient query for a campaign using the SAME filter engine as the
+     * real send (CampaignExecutor / Filterable::applyFilter). This is what keeps the
+     * preview count and "planned messages" list consistent with what actually gets
+     * sent — SegmentQueryBuilder does not understand computed-field operators like
+     * days_until_expiry/in_days and would silently drop those conditions.
+     */
+    protected function buildRecipientQuery(Campaign $campaign)
+    {
+        if ($campaign->target_type === 'service') {
+            return \App\Models\Service::forClient($campaign->client_id)
+                ->where('service_type_id', $campaign->service_type_id)
+                ->applyFilter($campaign->filter);
+        }
+
+        return \App\Models\Customer::forClient($campaign->client_id)
+            ->applyFilter($campaign->filter);
+    }
+
+    /**
      * Get contacts planned for next campaign run (matching - cooldown)
      *
      * @param Campaign $campaign
@@ -702,17 +721,8 @@ HTML;
     {
         $cooldownDays = $campaign->cooldown_days ?? 0;
 
-        // Build query for matching records (customers or services based on target_type)
-        $query = $this->queryBuilder->getMatchesQuery(
-            $campaign->client_id,
-            $campaign->segment_filter,
-            $campaign->target_type
-        );
-
-        // Filter by service_type_id if targeting services
-        if ($campaign->target_type === 'service' && $campaign->service_type_id) {
-            $query->where('service_type_id', $campaign->service_type_id);
-        }
+        // Use the SAME filter engine as the real send so the planned list matches what is sent.
+        $query = $this->buildRecipientQuery($campaign);
 
         // Get record IDs in cooldown for this campaign
         $cooldownIds = [];
@@ -854,17 +864,8 @@ HTML;
     {
         $cooldownDays = $campaign->cooldown_days ?? 0;
 
-        // Build query for matching records
-        $query = $this->queryBuilder->getMatchesQuery(
-            $campaign->client_id,
-            $campaign->segment_filter,
-            $campaign->target_type
-        );
-
-        // Filter by service_type_id if targeting services
-        if ($campaign->target_type === 'service' && $campaign->service_type_id) {
-            $query->where('service_type_id', $campaign->service_type_id);
-        }
+        // Use the SAME filter engine as the real send so the preview count matches what is sent.
+        $query = $this->buildRecipientQuery($campaign);
 
         // Get record IDs in cooldown for this campaign
         $cooldownIds = [];
