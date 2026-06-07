@@ -57,7 +57,9 @@ class EmailValidator
         'noreply', 'no-reply', 'donotreply', 'do-not-reply',
         'null', 'void', 'none', 'nobody', 'nothing',
         'temp', 'temporary', 'tmp',
-        'info', 'contact', 'support', 'sales', 'hello', 'hi',
+        // Role addresses (info@, contact@, support@, sales@) are legitimate business
+        // contacts and must receive transactional notices like service-expiry emails,
+        // so they are intentionally NOT blocked here.
     ];
 
     /**
