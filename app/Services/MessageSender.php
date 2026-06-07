@@ -78,14 +78,18 @@ class MessageSender
         }
 
         try {
-            $fromAddress = $from ?? config('mail.from.address');
+            // Fall back to the default sender when none is set (?: also catches empty string)
+            $fromAddress = $from ?: config('mail.from.address');
             $fromName = config('mail.from.name', 'Alert.az');
 
-            \Mail::send([], [], function ($mail) use ($to, $subject, $body, $fromAddress, $fromName) {
+            // Plain-text templates: escape and keep line breaks. Leave HTML templates as-is.
+            $html = ($body === strip_tags($body)) ? nl2br(e($body)) : $body;
+
+            \Mail::send([], [], function ($mail) use ($to, $subject, $html, $fromAddress, $fromName) {
                 $mail->to($to)
                     ->from($fromAddress, $fromName)
                     ->subject($subject)
-                    ->html($body);
+                    ->html($html);
             });
 
             return [
