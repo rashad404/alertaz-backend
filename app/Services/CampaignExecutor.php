@@ -191,7 +191,8 @@ class CampaignExecutor
         array $result,
         ?int $customerId,
         ?int $serviceId,
-        ?string $subject = null
+        ?string $subject = null,
+        ?bool $isTest = null
     ): void {
         Message::create([
             'client_id' => $campaign->client_id,
@@ -204,7 +205,7 @@ class CampaignExecutor
             'subject' => $subject,
             'sender' => $channel === 'sms' ? $campaign->sender : $campaign->email_sender,
             'status' => $result['success'] ? Message::STATUS_SENT : Message::STATUS_FAILED,
-            'is_test' => $campaign->is_test ?? false,
+            'is_test' => $isTest ?? ($campaign->is_test ?? false),
             'source' => 'campaign',
             'provider_message_id' => $result['message_id'] ?? null,
             'error_message' => $result['error'] ?? null,
@@ -212,5 +213,160 @@ class CampaignExecutor
             'segments' => $channel === 'sms' ? $this->templateRenderer->calculateSMSSegments($content) : 1,
             'sent_at' => $result['success'] ? now() : null,
         ]);
+    }
+
+    /**
+     * Test-send to the first N real recipients matching the campaign's segment.
+     * Uses the same recipient query, rendering and channels as a real run, but
+     * marks messages is_test and does NOT touch campaign counters or cooldowns.
+     */
+    public function testSendToMatches(Campaign $campaign, int $count): array
+    {
+        $targets = $this->collectTargets($campaign, $count);
+
+        if ($targets->isEmpty()) {
+            return ['matched' => 0, 'results' => []];
+        }
+
+        $results = $targets->map(fn ($t) => $this->testDeliver(
+            $campaign, $t['variables'], $t['phone'], $t['email'], $t['customer_id'], $t['service_id']
+        ))->all();
+
+        return ['matched' => $targets->count(), 'results' => $results];
+    }
+
+    /**
+     * Test-send to a custom phone/email. Renders the template with a real sample
+     * recipient's variables (so {{name}}, {{expiry_date}} etc. look realistic),
+     * falling back to placeholders when the segment matches nobody yet.
+     */
+    public function testSendToCustom(Campaign $campaign, ?string $phone, ?string $email): array
+    {
+        $sample = $this->collectTargets($campaign, 1)->first();
+        $variables = $sample['variables'] ?? $this->placeholderVariables($campaign);
+
+        return $this->testDeliver(
+            $campaign,
+            $variables,
+            $phone,
+            $email,
+            $sample['customer_id'] ?? null,
+            $sample['service_id'] ?? null
+        );
+    }
+
+    /**
+     * Build the recipient list for a campaign as normalised targets.
+     * Mirrors executeForServices()/executeForCustomers() recipient selection.
+     */
+    protected function collectTargets(Campaign $campaign, ?int $limit = null)
+    {
+        if ($campaign->targetsServices()) {
+            $query = Service::forClient($campaign->client_id)
+                ->where('service_type_id', $campaign->service_type_id)
+                ->applyFilter($campaign->filter)
+                ->has('customer')
+                ->with('customer');
+
+            if ($limit) {
+                $query->limit($limit);
+            }
+
+            return $query->get()->map(fn (Service $s) => [
+                'variables' => $s->getTemplateVariables(),
+                'phone' => $s->customer->phone,
+                'email' => $s->customer->email,
+                'customer_id' => $s->customer_id,
+                'service_id' => $s->id,
+            ])->values();
+        }
+
+        $query = Customer::forClient($campaign->client_id)->applyFilter($campaign->filter);
+
+        if ($limit) {
+            $query->limit($limit);
+        }
+
+        return $query->get()->map(fn (Customer $c) => [
+            'variables' => $c->getTemplateVariables(),
+            'phone' => $c->phone,
+            'email' => $c->email,
+            'customer_id' => $c->id,
+            'service_id' => null,
+        ])->values();
+    }
+
+    /**
+     * Render + send a single test message (channel-guarded), logged as is_test.
+     */
+    protected function testDeliver(
+        Campaign $campaign,
+        array $variables,
+        ?string $phone,
+        ?string $email,
+        ?int $customerId,
+        ?int $serviceId
+    ): array {
+        $out = ['sms' => null, 'email' => null];
+
+        if ($campaign->requiresPhone() && $phone) {
+            $message = $this->templateRenderer->sanitizeForSMS(
+                $this->templateRenderer->render($campaign->message_template ?? '', $variables)
+            );
+            $res = $this->messageSender->sendSms($phone, $message, $campaign->sender ?? 'Alert.az');
+            $this->logMessage($campaign, 'sms', $phone, $message, $res, $customerId, $serviceId, null, true);
+            $out['sms'] = [
+                'recipient' => $phone,
+                'content' => $message,
+                'status' => $res['success'] ? 'sent' : 'failed',
+                'error' => $res['error'] ?? null,
+            ];
+        }
+
+        if ($campaign->requiresEmail() && $email) {
+            $subject = $this->templateRenderer->render($campaign->email_subject ?? '', $variables);
+            $body = $this->templateRenderer->render($campaign->email_body ?? '', $variables);
+            $res = $this->messageSender->sendEmail($email, $subject, $body, $campaign->email_sender);
+            $this->logMessage($campaign, 'email', $email, $body, $res, $customerId, $serviceId, $subject, true);
+            $out['email'] = [
+                'recipient' => $email,
+                'subject' => $subject,
+                'content' => $body,
+                'status' => $res['success'] ? 'sent' : 'failed',
+                'error' => $res['error'] ?? null,
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * Sample variables used when a custom test has no matching real recipient yet.
+     */
+    protected function placeholderVariables(Campaign $campaign): array
+    {
+        if ($campaign->targetsServices()) {
+            $expiry = now()->addDay()->format('d.m.Y');
+            return [
+                'service_name' => 'example.az',
+                'name' => 'example.az',
+                'expiry_at' => $expiry,
+                'expiry_date' => $expiry,
+                'days_until_expiry' => 1,
+                'status' => 'active',
+                'customer_name' => 'Test',
+                'customer_email' => '',
+                'customer_phone' => '',
+            ];
+        }
+
+        return [
+            'customer_name' => 'Test',
+            'name' => 'Test',
+            'customer_email' => '',
+            'email' => '',
+            'customer_phone' => '',
+            'phone' => '',
+        ];
     }
 }

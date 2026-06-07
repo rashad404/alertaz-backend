@@ -2074,9 +2074,6 @@ class UserClientController extends Controller
         ]);
     }
 
-    /**
-     * Test send to N matching contacts
-     */
     public function testSendCampaign(Request $request, $id, $campaignId): JsonResponse
     {
         $client = $this->getClientForUser($request, (int) $id);
@@ -2097,142 +2094,39 @@ class UserClientController extends Controller
             return response()->json(['status' => 'error', 'errors' => $validator->errors()], 422);
         }
 
-        $count = $request->input('count');
-        $queryBuilder = app(\App\Services\SegmentQueryBuilder::class);
-        $templateRenderer = app(\App\Services\TemplateRenderer::class);
-        $smsService = app(\App\Services\QuickSmsService::class);
+        $executor = app(\App\Services\CampaignExecutor::class);
+        $result = $executor->testSendToMatches($campaign, (int) $request->input('count'));
 
-        $user = $campaign->getOwnerUser();
-        if (!$user) {
-            return response()->json(['status' => 'error', 'message' => 'Campaign owner not found'], 500);
+        if (($result['matched'] ?? 0) === 0) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'No recipients match this campaign\'s segment',
+            ], 422);
         }
 
-        // Get matching contacts
-        $contacts = $queryBuilder->getMatches($client->id, $campaign->segment_filter, $count);
-
-        if ($contacts->isEmpty()) {
-            return response()->json(['status' => 'error', 'message' => 'No contacts match the segment filter'], 422);
-        }
-
-        $costPerSms = config('app.sms_cost_per_message', 0.05);
-        $globalTestMode = config('services.quicksms.test_mode', false);
-
-        $results = [];
-        $totalCost = 0;
-        $sentCount = 0;
-        $failedCount = 0;
-
-        foreach ($contacts as $contact) {
-            try {
-                $message = $templateRenderer->renderStrict($campaign->message_template, $contact);
-            } catch (\App\Exceptions\TemplateRenderException $e) {
-                $results[] = [
-                    'phone' => $contact->phone,
-                    'status' => 'failed',
-                    'error' => $e->getMessage(),
-                ];
-                $failedCount++;
-                continue;
-            }
-
-            $message = $templateRenderer->sanitizeForSMS($message);
-            $segments = $templateRenderer->calculateSMSSegments($message);
-            $cost = $segments * $costPerSms;
-
-            if (!$globalTestMode && $user->balance < $cost) {
-                $results[] = [
-                    'phone' => $contact->phone,
-                    'message' => $message,
-                    'status' => 'failed',
-                    'error' => 'Insufficient balance',
-                ];
-                $failedCount++;
-                continue;
-            }
-
-            if ($globalTestMode) {
-                $status = 'sent';
-                $error = null;
-            } else {
-                $unicode = $smsService->requiresUnicode($message);
-                $result = $smsService->sendSMS($contact->phone, $message, $campaign->sender, $unicode);
-
-                if ($result['success']) {
-                    $status = 'sent';
-                    $error = null;
-                    $user->deductBalance($cost);
-                    $totalCost += $cost;
-
-                    \App\Models\SmsMessage::create([
-                        'user_id' => $campaign->created_by,
-                        'source' => 'campaign',
-                        'client_id' => $campaign->client_id,
-                        'campaign_id' => $campaign->id,
-                        'contact_id' => $contact->id,
-                        'phone' => $contact->phone,
-                        'message' => $message,
-                        'sender' => $campaign->sender,
-                        'cost' => $cost,
-                        'status' => 'sent',
-                        'is_test' => true,
-                        'provider_transaction_id' => $result['transaction_id'] ?? null,
-                        'sent_at' => now(),
-                    ]);
-
-                    // Also create in unified messages table
-                    \App\Models\Message::create([
-                        'client_id' => $campaign->client_id,
-                        'campaign_id' => $campaign->id,
-                        'channel' => 'sms',
-                        'recipient' => $contact->phone,
-                        'content' => $message,
-                        'sender' => $campaign->sender,
-                        'status' => 'sent',
-                        'is_test' => true,
-                        'cost' => $cost,
-                        'segments' => $segments,
-                        'sent_at' => now(),
-                    ]);
-
-                    \App\Models\CampaignContactLog::recordSend($campaign->id, $contact->id);
-                } else {
-                    $status = 'failed';
-                    $error = $result['error_message'] ?? 'Unknown error';
+        $sent = 0;
+        $failed = 0;
+        foreach ($result['results'] as $r) {
+            foreach (['sms', 'email'] as $ch) {
+                if (!empty($r[$ch])) {
+                    $r[$ch]['status'] === 'sent' ? $sent++ : $failed++;
                 }
-            }
-
-            $results[] = [
-                'phone' => $contact->phone,
-                'message' => $message,
-                'segments' => $segments,
-                'cost' => $cost,
-                'status' => $status,
-                'error' => $error,
-            ];
-
-            if ($status === 'sent') {
-                $sentCount++;
-            } else {
-                $failedCount++;
             }
         }
 
         return response()->json([
             'status' => 'success',
-            'message' => "Test send completed: {$sentCount} sent, {$failedCount} failed",
+            'message' => "Test send completed: {$sent} sent, {$failed} failed",
             'data' => [
-                'sent' => $sentCount,
-                'failed' => $failedCount,
-                'total_cost' => round($totalCost, 2),
-                'messages' => $results,
-                'is_test_mode' => $globalTestMode,
+                'sent' => $sent,
+                'failed' => $failed,
+                'matched' => $result['matched'],
+                'messages' => $result['results'],
             ],
         ]);
     }
 
-    /**
-     * Test send to custom phone/email
-     */
+
     public function testSendCampaignCustom(Request $request, $id, $campaignId): JsonResponse
     {
         $client = $this->getClientForUser($request, (int) $id);
@@ -2248,7 +2142,6 @@ class UserClientController extends Controller
         $validator = Validator::make($request->all(), [
             'phone' => 'nullable|string|regex:/^994[0-9]{9}$/',
             'email' => 'nullable|email|max:255',
-            'sample_contact_id' => 'nullable|integer',
         ]);
 
         if ($validator->fails()) {
@@ -2262,247 +2155,19 @@ class UserClientController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Phone or email is required'], 422);
         }
 
-        $user = $campaign->getOwnerUser();
-        if (!$user) {
-            return response()->json(['status' => 'error', 'message' => 'Campaign owner not found'], 500);
-        }
+        $executor = app(\App\Services\CampaignExecutor::class);
+        $result = $executor->testSendToCustom($campaign, $phone, $email);
 
-        // Get sample contact for template variables
-        $sampleContactId = $request->input('sample_contact_id');
-        $sampleContact = null;
-
-        if ($sampleContactId) {
-            $sampleContact = \App\Models\Contact::where('client_id', $client->id)
-                ->where('id', $sampleContactId)
-                ->first();
-        } else {
-            if ($phone) {
-                $sampleContact = \App\Models\Contact::where('client_id', $client->id)
-                    ->where('phone', $phone)
-                    ->first();
-            }
-            if (!$sampleContact && $email) {
-                $sampleContact = \App\Models\Contact::where('client_id', $client->id)
-                    ->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(attributes, '$.email')) = ?", [$email])
-                    ->first();
-            }
-            if (!$sampleContact) {
-                $sampleContact = \App\Models\Contact::createSampleInstance($client->id, $phone, $email);
-            }
-        }
-
-        $templateRenderer = app(\App\Services\TemplateRenderer::class);
-        $results = ['sms' => null, 'email' => null];
-
-        // Send SMS
-        if ($phone && ($campaign->channel === 'sms' || $campaign->channel === 'both')) {
-            $results['sms'] = $this->sendCampaignTestSms($campaign, $user, $sampleContact, $phone, $templateRenderer);
-        }
-
-        // Send Email
-        if ($email && ($campaign->channel === 'email' || $campaign->channel === 'both')) {
-            $results['email'] = $this->sendCampaignTestEmail($campaign, $user, $sampleContact, $email, $templateRenderer);
-        }
-
-        $anySuccess = ($results['sms']['status'] ?? null) === 'sent' || ($results['email']['status'] ?? null) === 'sent';
+        $anySuccess = ($result['sms']['status'] ?? null) === 'sent'
+            || ($result['email']['status'] ?? null) === 'sent';
 
         return response()->json([
             'status' => $anySuccess ? 'success' : 'error',
             'message' => $anySuccess ? 'Test sent successfully' : 'Failed to send test',
-            'data' => $results,
+            'data' => $result,
         ], $anySuccess ? 200 : 500);
     }
 
-    /**
-     * Helper: Send test SMS for campaign
-     */
-    private function sendCampaignTestSms(Campaign $campaign, $user, $sampleContact, string $phone, $templateRenderer): array
-    {
-        $smsService = app(\App\Services\QuickSmsService::class);
-        $costPerSms = config('app.sms_cost_per_message', 0.05);
-        $globalTestMode = config('services.quicksms.test_mode', false);
-
-        $message = $templateRenderer->renderWithFallback($campaign->message_template ?? '', $sampleContact);
-        $message = $templateRenderer->sanitizeForSMS($message);
-        $segments = $templateRenderer->calculateSMSSegments($message);
-        $cost = $segments * $costPerSms;
-
-        if (!$globalTestMode && $user->balance < $cost) {
-            return ['phone' => $phone, 'message' => $message, 'status' => 'failed', 'error' => 'Insufficient balance'];
-        }
-
-        if ($globalTestMode) {
-            $status = 'sent';
-            $error = null;
-        } else {
-            $unicode = $smsService->requiresUnicode($message);
-            $result = $smsService->sendSMS($phone, $message, $campaign->sender, $unicode);
-
-            if ($result['success']) {
-                $status = 'sent';
-                $error = null;
-                $user->deductBalance($cost);
-
-                \App\Models\SmsMessage::create([
-                    'user_id' => $campaign->created_by,
-                    'source' => 'campaign',
-                    'client_id' => $campaign->client_id,
-                    'campaign_id' => $campaign->id,
-                    'phone' => $phone,
-                    'message' => $message,
-                    'sender' => $campaign->sender,
-                    'cost' => $cost,
-                    'status' => 'sent',
-                    'is_test' => true,
-                    'provider_transaction_id' => $result['transaction_id'] ?? null,
-                    'sent_at' => now(),
-                ]);
-
-                // Also create in unified messages table
-                \App\Models\Message::create([
-                    'client_id' => $campaign->client_id,
-                    'campaign_id' => $campaign->id,
-                    'channel' => 'sms',
-                    'recipient' => $phone,
-                    'content' => $message,
-                    'sender' => $campaign->sender,
-                    'status' => 'sent',
-                    'is_test' => true,
-                    'cost' => $cost,
-                    'segments' => $segments,
-                    'sent_at' => now(),
-                ]);
-            } else {
-                $status = 'failed';
-                $error = $result['error_message'] ?? 'Unknown error';
-            }
-        }
-
-        return [
-            'phone' => $phone,
-            'message' => $message,
-            'segments' => $segments,
-            'cost' => ($status === 'sent' && !$globalTestMode) ? $cost : 0,
-            'status' => $status,
-            'error' => $error,
-            'test_mode' => $globalTestMode,
-        ];
-    }
-
-    /**
-     * Helper: Send test Email for campaign
-     */
-    private function sendCampaignTestEmail(Campaign $campaign, $user, $sampleContact, string $email, $templateRenderer): array
-    {
-        $costPerEmail = config('app.email_cost_per_message', 0.01);
-        $globalTestMode = config('services.quicksms.test_mode', false);
-
-        $subject = $templateRenderer->renderWithFallback($campaign->email_subject_template ?? '', $sampleContact);
-        $bodyText = $templateRenderer->renderWithFallback($campaign->email_body_template ?? '', $sampleContact);
-
-        $emailSenderDetails = \App\Models\UserEmailSender::getByEmail($campaign->email_sender ?? '');
-        if (!$emailSenderDetails) {
-            $emailSenderDetails = \App\Models\UserEmailSender::getDefault();
-        }
-
-        $cost = $costPerEmail;
-
-        if (!$globalTestMode && $user->balance < $cost) {
-            return ['email' => $email, 'subject' => $subject, 'status' => 'failed', 'error' => 'Insufficient balance'];
-        }
-
-        if ($globalTestMode) {
-            $status = 'sent';
-            $error = null;
-
-            \App\Models\EmailMessage::create([
-                'user_id' => $campaign->created_by,
-                'source' => 'campaign',
-                'client_id' => $campaign->client_id,
-                'campaign_id' => $campaign->id,
-                'to_email' => $email,
-                'subject' => $subject,
-                'body_text' => $bodyText,
-                'from_email' => $emailSenderDetails['email'],
-                'from_name' => $emailSenderDetails['name'],
-                'cost' => 0,
-                'status' => 'sent',
-                'is_test' => true,
-                'sent_at' => now(),
-            ]);
-
-            // Also create in unified messages table
-            \App\Models\Message::create([
-                'client_id' => $campaign->client_id,
-                'campaign_id' => $campaign->id,
-                'channel' => 'email',
-                'recipient' => $email,
-                'subject' => $subject,
-                'content' => $bodyText,
-                'sender' => $emailSenderDetails['email'],
-                'status' => 'sent',
-                'is_test' => true,
-                'cost' => 0,
-                'segments' => 1,
-                'sent_at' => now(),
-            ]);
-        } else {
-            try {
-                $executionEngine = app(\App\Services\CampaignExecutionEngine::class);
-                $emailService = $executionEngine->getEmailService();
-                $result = $emailService->send(
-                    $user,
-                    $email,
-                    $subject,
-                    $bodyText,
-                    $bodyText,
-                    null,
-                    $emailSenderDetails['email'],
-                    $emailSenderDetails['name'],
-                    'campaign',
-                    $campaign->client_id,
-                    $campaign->id,
-                    $sampleContact->id ?: null
-                );
-
-                if ($result['success']) {
-                    $status = 'sent';
-                    $error = null;
-
-                    // Also create in unified messages table (test send)
-                    \App\Models\Message::create([
-                        'client_id' => $campaign->client_id,
-                        'campaign_id' => $campaign->id,
-                        'channel' => 'email',
-                        'recipient' => $email,
-                        'subject' => $subject,
-                        'content' => $bodyText,
-                        'sender' => $emailSenderDetails['email'],
-                        'status' => 'sent',
-                        'is_test' => true,
-                        'cost' => $cost,
-                        'segments' => 1,
-                        'sent_at' => now(),
-                    ]);
-                } else {
-                    $status = 'failed';
-                    $error = $result['error'] ?? 'Unknown error';
-                }
-            } catch (\Exception $e) {
-                $status = 'failed';
-                $error = $e->getMessage();
-            }
-        }
-
-        return [
-            'email' => $email,
-            'subject' => $subject,
-            'cost' => ($status === 'sent' && !$globalTestMode) ? $cost : 0,
-            'status' => $status,
-            'error' => $error,
-            'test_mode' => $globalTestMode,
-        ];
-    }
 
     /**
      * Retry failed campaign messages
