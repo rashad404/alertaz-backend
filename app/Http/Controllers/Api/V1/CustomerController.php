@@ -90,8 +90,18 @@ class CustomerController extends BaseController
                     continue;
                 }
 
-                $result = $this->upsertCustomer($clientId, $customerData);
-                $results[$result]++;
+                // Isolate each record: a single failing row must not roll back the
+                // whole batch and silently drop the other customers in it.
+                try {
+                    $result = $this->upsertCustomer($clientId, $customerData);
+                    $results[$result]++;
+                } catch (\Exception $e) {
+                    $results['errors'][] = [
+                        'index' => $index,
+                        'external_id' => $customerData['external_id'] ?? null,
+                        'message' => $e->getMessage(),
+                    ];
+                }
             }
 
             DB::commit();
@@ -209,15 +219,19 @@ class CustomerController extends BaseController
     {
         $customer = null;
 
-        // Try to find existing customer
+        // external_id is the customer's identity. When the partner sends it, match ONLY
+        // by external_id so a new customer that happens to share a phone/email with an
+        // existing one is created as its own record instead of overwriting (stealing) it.
         if (!empty($data['external_id'])) {
             $customer = Customer::forClient($clientId)->where('external_id', $data['external_id'])->first();
-        }
-        if (!$customer && !empty($data['phone'])) {
-            $customer = Customer::forClient($clientId)->where('phone', $data['phone'])->first();
-        }
-        if (!$customer && !empty($data['email'])) {
-            $customer = Customer::forClient($clientId)->where('email', $data['email'])->first();
+        } else {
+            // No external_id: fall back to phone, then email, to find an existing record.
+            if (!empty($data['phone'])) {
+                $customer = Customer::forClient($clientId)->where('phone', $data['phone'])->first();
+            }
+            if (!$customer && !empty($data['email'])) {
+                $customer = Customer::forClient($clientId)->where('email', $data['email'])->first();
+            }
         }
 
         if ($customer) {
