@@ -1432,7 +1432,10 @@ class UserClientController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Cannot activate campaign with status: ' . $campaign->status], 422);
         }
 
-        $campaign->update(['status' => 'active']);
+        // activate() sets next_run_at to the next slot inside the run window, so an
+        // automated campaign activated outside its window waits for the window start
+        // instead of firing immediately.
+        $campaign->activate();
 
         return response()->json(['status' => 'success', 'message' => 'Campaign activated', 'data' => $campaign->fresh()]);
     }

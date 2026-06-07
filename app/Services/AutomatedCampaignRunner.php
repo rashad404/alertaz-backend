@@ -65,42 +65,16 @@ class AutomatedCampaignRunner
             ];
         }
 
-        $dispatchedCount = 0;
-        $skippedCount = 0;
+        // Run through the unified CampaignExecutor: it targets the correct table
+        // (customers, or services filtered by service_type_id), applies the segment
+        // filter with the same engine as the preview, renders + sends, records
+        // cooldown, and schedules the next run / completes. The old
+        // SegmentQueryBuilder + SendCampaignMessage path defaulted to the customer
+        // table and silently sent nothing for service/email campaigns.
+        $result = app(CampaignExecutor::class)->execute($campaign);
 
-        // Use chunk to avoid loading all contacts into memory
-        $this->queryBuilder->getMatchesQuery(
-            $campaign->client_id,
-            $campaign->segment_filter
-        )->chunk(1000, function ($contacts) use ($campaign, &$dispatchedCount, &$skippedCount) {
-            foreach ($contacts as $contact) {
-                // Check cooldown before dispatching
-                if (CampaignContactLog::isInCooldown(
-                    $campaign->id,
-                    $contact->id,
-                    $campaign->cooldown_days
-                )) {
-                    $skippedCount++;
-                    continue;
-                }
+        Log::info("Campaign {$campaign->id}: executed", $result);
 
-                // Dispatch job to queue
-                SendCampaignMessage::dispatch($campaign, $contact);
-                $dispatchedCount++;
-            }
-        });
-
-        // Schedule next run
-        $campaign->scheduleNextRun();
-
-        Log::info("Campaign {$campaign->id}: Dispatched {$dispatchedCount} jobs, skipped {$skippedCount} (cooldown)");
-
-        return [
-            'campaign_id' => $campaign->id,
-            'success' => true,
-            'dispatched' => $dispatchedCount,
-            'skipped' => $skippedCount,
-            'run_count' => $campaign->run_count,
-        ];
+        return array_merge(['campaign_id' => $campaign->id, 'success' => true], $result);
     }
 }
