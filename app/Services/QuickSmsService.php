@@ -69,18 +69,22 @@ class QuickSmsService
                 ];
             }
 
-            $errorMessage = $this->getErrorMessage($data['errorCode'] ?? -500);
+            // QuickSMS may return numeric codes (-102) or string codes (WRONG_NUMBER_FORMAT)
+            $rawErrorCode = $data['errorCode'] ?? -500;
+            $errorCode = is_numeric($rawErrorCode) ? (int) $rawErrorCode : null;
+            $errorMessage = $data['errorMessage']
+                ?? ($errorCode !== null ? $this->getErrorMessage($errorCode) : (string) $rawErrorCode);
 
             Log::error('QuickSMS send failed', [
                 'phone' => $phone,
-                'error_code' => $data['errorCode'] ?? null,
-                'error_message' => $data['errorMessage'] ?? $errorMessage,
+                'error_code' => $rawErrorCode,
+                'error_message' => $errorMessage,
             ]);
 
             return [
                 'success' => false,
-                'error_code' => $data['errorCode'] ?? -500,
-                'error_message' => $data['errorMessage'] ?? $errorMessage,
+                'error_code' => $errorCode,
+                'error_message' => $errorMessage,
             ];
 
         } catch (Exception $e) {
